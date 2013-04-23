@@ -7,7 +7,6 @@ public class Scenario1 extends Scenario {
 
     private static SimulationScenario scenario = new SimulationScenario() {
         {
-
             StochasticProcess process1 = new StochasticProcess() {
                 {
                     eventInterArrivalTime(constant(100));
@@ -23,7 +22,7 @@ public class Scenario1 extends Scenario {
             StochasticProcess process3 = new StochasticProcess() {
                 {
                     eventInterArrivalTime(constant(100));
-                    raise(100, Operations.addIndexEntry(), uniform(13));
+                    raise(10, Operations.addIndexEntry(), uniform(13));
                 }
             };
 

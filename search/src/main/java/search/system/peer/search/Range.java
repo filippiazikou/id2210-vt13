@@ -22,4 +22,24 @@ public class Range {
         this.left = left;
         this.right = right;
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        Range range = (Range) o;
+
+        if (left != range.left) return false;
+        if (right != range.right) return false;
+
+        return true;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = left;
+        result = 31 * result + right;
+        return result;
+    }
 }

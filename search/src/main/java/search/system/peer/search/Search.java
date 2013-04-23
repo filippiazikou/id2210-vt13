@@ -7,9 +7,9 @@ import cyclon.system.peer.cyclon.CyclonSample;
 import cyclon.system.peer.cyclon.CyclonSamplePort;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.Random;
+import java.util.concurrent.locks.Lock;
 import java.util.logging.Level;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
@@ -84,7 +84,8 @@ public final class Search extends ComponentDefinition {
         subscribe(handleCyclonSample, cyclonSamplePort);
         subscribe(handleTManSample, tmanSamplePort);
         subscribe(handleAddIndexText, indexPort);
-        subscribe(getUpdatesHandler, networkPort);
+        subscribe(getUpdatesRequestHandler, networkPort);
+        subscribe(getUpdatesResponseHandler, networkPort);
     }
 //-------------------------------------------------------------------	
     Handler<SearchInit> handleInit = new Handler<SearchInit>() {
@@ -118,42 +119,135 @@ public final class Search extends ComponentDefinition {
             int rand = randomGenerator.nextInt(neighbours.size());
             PeerAddress selectedPeer = neighbours.get(rand);
 
+
             ArrayList<Range> missingValues = new ArrayList<Range>();
 
             int i=0;
 
-            if (indexStore.get(i)!=0) {
+            if (!indexStore.get(i).equals(0)) {
                 Range range =new Range(0,indexStore.get(0)-1);
                 missingValues.add(range);
             }
 
             while (i<indexStore.size()-1) {
-                if(indexStore.get(i) == indexStore.get(i+1)) {
+                if(indexStore.get(i).equals(indexStore.get(i+1)-1)) {
                     i++;
                     continue;
                 }
-
                 Range range = new Range(indexStore.get(i)+1, indexStore.get(i+1)-1);
                 missingValues.add(range);
                 i++;
             }
 
-            trigger(new GetUpdates(missingValues, indexStore.get(indexStore.size()-1), self, selectedPeer), networkPort);
-        }
-    };
-
-    Handler<GetUpdates> getUpdatesHandler = new Handler<GetUpdates>() {
-        @Override
-        public void handle(GetUpdates getUpdates) {
-            ArrayList<Range> ranges = getUpdates.getMissingRanges();
-
-            for(Range range : ranges){
+            logger.info(String.format("===========Missing ranges on %s ============", self.getPeerAddress().getId()));
+            for(Range range : missingValues){
                 logger.info(String.format("%s - Range [%s, %s]", self.getPeerAddress().getId(), range.getLeft(), range.getRight()));
             }
 
-            logger.info(String.format("%s - Last: %s", self.getPeerAddress().getId(), getUpdates.getLastExisting()));
+            logger.info(String.format("%s - Last: %s", self.getPeerAddress().getId(), indexStore.get(indexStore.size()-1)));
+            logger.info("++++++++++++++++++++++++++++++++++++++++++++++++++");
+
+            trigger(new GetUpdatesRequest(missingValues, indexStore.get(indexStore.size()-1), self, selectedPeer), networkPort);
         }
     };
+
+    Handler<GetUpdatesRequest> getUpdatesRequestHandler = new Handler<GetUpdatesRequest>() {
+        @Override
+        public void handle(GetUpdatesRequest getUpdatesRequest) {
+            ArrayList<Range> ranges = getUpdatesRequest.getMissingRanges();
+
+            ArrayList<BasicTorrentData> missingData = new ArrayList<BasicTorrentData>();
+
+            for(Integer value : indexStore) {
+                for(Range range : ranges) {
+                    if(isInRange(value, range)) {
+                        BasicTorrentData missingDataInIndex;
+                        try {
+                            missingDataInIndex = retrieveRecordFromIndex(value.toString());
+                        } catch (ParseException e) {
+                            continue;
+                        } catch (IOException e) {
+                            continue;
+                        }
+                        if(!missingData.contains(missingDataInIndex))
+                            missingData.add(missingDataInIndex);
+                        break;
+                    }
+                }
+
+                if(value > getUpdatesRequest.getLastExisting()) {
+                    BasicTorrentData missingDataInIndex;
+                    try {
+                        missingDataInIndex = retrieveRecordFromIndex(value.toString());
+                    } catch (ParseException e) {
+                        continue;
+                    } catch (IOException e) {
+                        continue;
+                    }
+                    if(!missingData.contains(missingDataInIndex))
+                        missingData.add(missingDataInIndex);
+                }
+            }
+
+            if(missingData.size() == 0) return;
+
+            trigger(new GetUpdatesResponse(self, getUpdatesRequest.getPeerSource(), missingData), networkPort);
+        }
+    };
+
+    Handler<GetUpdatesResponse> getUpdatesResponseHandler =new Handler<GetUpdatesResponse>() {
+        @Override
+        public void handle(GetUpdatesResponse getUpdatesResponse) {
+            ArrayList<BasicTorrentData> basicTorrentData = getUpdatesResponse.getTorrentData();
+
+            for(BasicTorrentData data : basicTorrentData) {
+                if(!indexStore.contains(data.getId())) {
+                    try {
+                        addEntry(data.getTitle(), String.valueOf(data.getId()));
+                    } catch (IOException e) {
+                        indexStore.remove(data.getId());
+                        continue;
+                    }
+                }
+            }
+
+            logger.info("=========== Index on "+ self.getPeerAddress().getId()+" ===================");
+            for (Integer val : indexStore) {
+                logger.info(String.format("%s %s", self.getPeerAddress().getId(), String.valueOf(val)));
+            }
+            logger.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+        }
+    };
+
+    private BasicTorrentData retrieveRecordFromIndex(String value) throws ParseException, IOException {
+        // the "title" arg specifies the default field to use when no field is explicitly specified in the query.
+        Query q = new QueryParser(Version.LUCENE_42, "id", analyzer).parse(value);
+        IndexSearcher searcher = null;
+        IndexReader reader;
+        try {
+            reader = DirectoryReader.open(index);
+            searcher = new IndexSearcher(reader);
+        } catch (IOException ex) {
+            java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
+            System.exit(-1);
+        }
+
+        int hitsPerPage = 1;
+        TopScoreDocCollector collector = TopScoreDocCollector.create(hitsPerPage, true);
+
+        searcher.search(q, collector);
+        ScoreDoc[] hits = collector.topDocs().scoreDocs;
+
+        if(hits.length == 0) return null;
+
+        int docId = hits[0].doc;
+        Document d = searcher.doc(docId);
+        return new BasicTorrentData(Integer.parseInt(d.get("id")), d.get("title"), null);
+    }
+
+    private boolean isInRange(int value, Range range) {
+        return range.getLeft() <= value && value <= range.getRight();
+    }
 
     Handler<WebRequest> handleWebRequest = new Handler<WebRequest>() {
         public void handle(WebRequest event) {
@@ -234,15 +328,16 @@ public final class Search extends ComponentDefinition {
         w.addDocument(doc);
         w.close();
 
+        logger.info(String.format("%s Added %s", self.getPeerAddress().getId(), id));
 
         int idVal = Integer.parseInt(id);
         indexStore.add(idVal);
         Collections.sort(indexStore);
-
-
-        if (idVal == latestMissingIndexValue + 1) {
-            latestMissingIndexValue++;
-        }
+//
+//
+//        if (idVal == latestMissingIndexValue + 1) {
+//            latestMissingIndexValue++;
+//        }
     }
 
     private String query(StringBuilder sb, String querystr) throws ParseException, IOException {

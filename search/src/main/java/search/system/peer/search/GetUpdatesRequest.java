@@ -11,11 +11,11 @@ import java.util.ArrayList;
  * Date: 4/22/13
  * Time: 4:13 PM
  */
-public class GetUpdates extends PeerMessage {
+public class GetUpdatesRequest extends PeerMessage {
     ArrayList<Range> missingRanges;
-    int lastExisting;
+    Integer lastExisting;
 
-    public GetUpdates(ArrayList<Range> missingRanges, int lastExisting, PeerAddress source, PeerAddress destination) {
+    public GetUpdatesRequest(ArrayList<Range> missingRanges, int lastExisting, PeerAddress source, PeerAddress destination) {
         super(source, destination);
         this.missingRanges = missingRanges;
         this.lastExisting = lastExisting;
@@ -25,7 +25,7 @@ public class GetUpdates extends PeerMessage {
         return missingRanges;
     }
 
-    public int getLastExisting() {
+    public Integer getLastExisting() {
         return lastExisting;
     }
 }
