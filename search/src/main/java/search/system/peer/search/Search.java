@@ -6,6 +6,7 @@ import common.peer.PeerAddress;
 import cyclon.system.peer.cyclon.CyclonSample;
 import cyclon.system.peer.cyclon.CyclonSamplePort;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Random;
@@ -103,7 +104,8 @@ public final class Search extends ComponentDefinition {
             try {
                 String title = "The Art of Computer Science";
                 String id = "100";
-                addEntry(title,id);
+                String magnet = "a896f7155237fb27e2eaa06033b5796d7ae84a1d";
+                addEntry(title,id, magnet);
             } catch (IOException ex) {
                 java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
                 System.exit(-1);
@@ -203,7 +205,7 @@ public final class Search extends ComponentDefinition {
             for(BasicTorrentData data : basicTorrentData) {
                 if(!indexStore.contains(data.getId())) {
                     try {
-                        addEntry(data.getTitle(), String.valueOf(data.getId()));
+                        addEntry(data.getTitle(), String.valueOf(data.getId()), data.getMagnet());
                     } catch (IOException e) {
                         indexStore.remove(data.getId());
                         continue;
@@ -242,7 +244,7 @@ public final class Search extends ComponentDefinition {
 
         int docId = hits[0].doc;
         Document d = searcher.doc(docId);
-        return new BasicTorrentData(Integer.parseInt(d.get("id")), d.get("title"), null);
+        return new BasicTorrentData(Integer.parseInt(d.get("id")), d.get("title"), d.get("magnet"));
     }
 
     private boolean isInRange(int value, Range range) {
@@ -262,7 +264,7 @@ public final class Search extends ComponentDefinition {
             if (args[0].compareToIgnoreCase("search") == 0) {
                 response = new WebResponse(searchPageHtml(args[1]), event, 1, 1);
             } else if (args[0].compareToIgnoreCase("add") == 0) {
-                response = new WebResponse(addEntryHtml(args[1], args[2]), event, 1, 1);
+                response = new WebResponse(addEntryHtml(args[1], args[2], args[3]), event, 1, 1);
             } else {
                 response = new WebResponse(searchPageHtml(event
                         .getTarget()), event, 1, 1);
@@ -295,7 +297,7 @@ public final class Search extends ComponentDefinition {
         return sb.toString();
     }
 
-    private String addEntryHtml(String title, String id) {
+    private String addEntryHtml(String title, String id, String magnet) {
         StringBuilder sb = new StringBuilder("<!DOCTYPE html PUBLIC \"-//W3C");
         sb.append("//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR");
         sb.append("/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http:");
@@ -307,8 +309,8 @@ public final class Search extends ComponentDefinition {
         sb.append("</head><body><h2 align=\"center\" class=\"style2\">");
         sb.append("ID2210 Uploaded Entry</h2><br>");
         try {
-            addEntry(title, id);
-            sb.append("Entry: ").append(title).append(" - ").append(id);
+            addEntry(title, id, magnet);
+            sb.append("Entry: ").append(title).append(" - ").append(id).append(" - ").append(magnet);
         } catch (IOException ex) {
             sb.append(ex.getMessage());
             java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
@@ -317,10 +319,11 @@ public final class Search extends ComponentDefinition {
         return sb.toString();
     }
 
-    private void addEntry(String title, String id) throws IOException {
+    private void addEntry(String title, String id, String magnet) throws IOException {
         IndexWriter w = new IndexWriter(index, config);
         Document doc = new Document();
         doc.add(new TextField("title", title, Field.Store.YES));
+        doc.add(new TextField("magnet", magnet, Field.Store.YES));
         // You may need to make the StringField searchable by NumericRangeQuery. See:
         // http://stackoverflow.com/questions/13958431/lucene-4-0-indexwriter-updatedocument-for-numeric-term
         // http://lucene.apache.org/core/4_2_0/core/org/apache/lucene/document/IntField.html
@@ -365,7 +368,7 @@ public final class Search extends ComponentDefinition {
         for (int i = 0; i < hits.length; ++i) {
             int docId = hits[i].doc;
             Document d = searcher.doc(docId);
-            sb.append("<li>").append(i + 1).append(". ").append(d.get("id")).append("\t").append(d.get("title")).append("</li>");
+            sb.append("<li>").append(i + 1).append(". ").append(d.get("id")).append("\t").append(d.get("title")).append("\t").append(d.get("magnet")).append("</li>");
         }
         sb.append("</ul>");
 
@@ -399,10 +402,15 @@ public final class Search extends ComponentDefinition {
         public void handle(AddIndexText event) {
             Random r = new Random(System.currentTimeMillis());
             String id = Integer.toString(r.nextInt(100000));
-            logger.info(self.getPeerAddress().getId() 
-                    + " - adding index entry: {}-{}", event.getText(), id);
+
+            /*Generate random magnet link*/
+            String magnet = new BigInteger(130, r).toString(32);
+
+
+            logger.info(self.getPeerAddress().getId()
+                    + " - adding index entry: {}-{}-"+magnet, event.getText(), id);
             try {
-                addEntry(event.getText(), id);
+                addEntry(event.getText(), id, magnet);
             } catch (IOException ex) {
                 java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
                 throw new IllegalArgumentException(ex.getMessage());
