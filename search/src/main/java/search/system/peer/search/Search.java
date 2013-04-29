@@ -121,16 +121,19 @@ public final class Search extends ComponentDefinition {
             int rand = randomGenerator.nextInt(neighbours.size());
             PeerAddress selectedPeer = neighbours.get(rand);
 
-
             ArrayList<Range> missingValues = new ArrayList<Range>();
 
             int i=0;
+            int lastExisting = -1;
 
-            if (!indexStore.get(i).equals(0)) {
-                Range range =new Range(0,indexStore.get(0)-1);
+
+            //Get the missing range less than the first value in the index - check if peer has index first
+            if (indexStore.size() != 0 && !indexStore.get(i).equals(0)) {
+                lastExisting =  indexStore.get(indexStore.size()-1);
+                Range range = new Range(0,indexStore.get(0)-1);
                 missingValues.add(range);
             }
-
+            /*Get all the rest missing ranges till the max value*/
             while (i<indexStore.size()-1) {
                 if(indexStore.get(i).equals(indexStore.get(i+1)-1)) {
                     i++;
@@ -146,10 +149,10 @@ public final class Search extends ComponentDefinition {
                 logger.info(String.format("%s - Range [%s, %s]", self.getPeerAddress().getId(), range.getLeft(), range.getRight()));
             }
 
-            logger.info(String.format("%s - Last: %s", self.getPeerAddress().getId(), indexStore.get(indexStore.size()-1)));
+            logger.info(String.format("%s - Last: %s", self.getPeerAddress().getId(), lastExisting));
             logger.info("++++++++++++++++++++++++++++++++++++++++++++++++++");
 
-            trigger(new GetUpdatesRequest(missingValues, indexStore.get(indexStore.size()-1), self, selectedPeer), networkPort);
+            trigger(new GetUpdatesRequest(missingValues, lastExisting, self, selectedPeer), networkPort);
         }
     };
 
@@ -157,12 +160,28 @@ public final class Search extends ComponentDefinition {
         @Override
         public void handle(GetUpdatesRequest getUpdatesRequest) {
             ArrayList<Range> ranges = getUpdatesRequest.getMissingRanges();
+            int lastExisting =  getUpdatesRequest.getLastExisting();
 
             ArrayList<BasicTorrentData> missingData = new ArrayList<BasicTorrentData>();
 
+
             for(Integer value : indexStore) {
-                for(Range range : ranges) {
-                    if(isInRange(value, range)) {
+                    for(Range range : ranges) {
+                        if(isInRange(value, range)) {
+                            BasicTorrentData missingDataInIndex;
+                            try {
+                                missingDataInIndex = retrieveRecordFromIndex(value.toString());
+                            } catch (ParseException e) {
+                                continue;
+                            } catch (IOException e) {
+                                continue;
+                            }
+                            if(!missingData.contains(missingDataInIndex))
+                                missingData.add(missingDataInIndex);
+                            break;
+                        }
+                    }
+                    if(lastExisting == -1 || value > lastExisting) {
                         BasicTorrentData missingDataInIndex;
                         try {
                             missingDataInIndex = retrieveRecordFromIndex(value.toString());
@@ -173,22 +192,7 @@ public final class Search extends ComponentDefinition {
                         }
                         if(!missingData.contains(missingDataInIndex))
                             missingData.add(missingDataInIndex);
-                        break;
                     }
-                }
-
-                if(value > getUpdatesRequest.getLastExisting()) {
-                    BasicTorrentData missingDataInIndex;
-                    try {
-                        missingDataInIndex = retrieveRecordFromIndex(value.toString());
-                    } catch (ParseException e) {
-                        continue;
-                    } catch (IOException e) {
-                        continue;
-                    }
-                    if(!missingData.contains(missingDataInIndex))
-                        missingData.add(missingDataInIndex);
-                }
             }
 
             if(missingData.size() == 0) return;
