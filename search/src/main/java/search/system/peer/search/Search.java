@@ -1,5 +1,7 @@
 package search.system.peer.search;
 
+import org.apache.lucene.document.*;
+import org.apache.lucene.search.*;
 import search.simulator.snapshot.Snapshot;
 import common.configuration.SearchConfiguration;
 import common.peer.PeerAddress;
@@ -13,20 +15,12 @@ import java.util.Random;
 import java.util.concurrent.locks.Lock;
 import java.util.logging.Level;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
-import org.apache.lucene.document.Document;
-import org.apache.lucene.document.Field;
-import org.apache.lucene.document.StringField;
-import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.queryparser.classic.QueryParser;
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.Query;
-import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.TopScoreDocCollector;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.RAMDirectory;
 import org.apache.lucene.util.Version;
@@ -75,7 +69,8 @@ public final class Search extends ComponentDefinition {
     IndexWriterConfig config = new IndexWriterConfig(Version.LUCENE_42, analyzer);
 
     private int latestMissingIndexValue =0;
-    
+    private int garbageIndex = -1;
+
 //-------------------------------------------------------------------	
     public Search() {
 
@@ -103,7 +98,7 @@ public final class Search extends ComponentDefinition {
             Snapshot.updateNum(self, num);
             try {
                 String title = "The Art of Computer Science";
-                String id = "100";
+                int id = 100;
                 String magnet = "a896f7155237fb27e2eaa06033b5796d7ae84a1d";
                 addEntry(title,id, magnet);
             } catch (IOException ex) {
@@ -127,7 +122,7 @@ public final class Search extends ComponentDefinition {
             int lastExisting = -1;
 
 
-            //Get the missing range less than the first value in the index - check if peer has index first
+            //Get the missing range less than the first value in the index - check first if peer has index first
             if (indexStore.size() != 0 && !indexStore.get(i).equals(0)) {
                 lastExisting =  indexStore.get(indexStore.size()-1);
                 Range range = new Range(0,indexStore.get(0)-1);
@@ -164,39 +159,37 @@ public final class Search extends ComponentDefinition {
 
             ArrayList<BasicTorrentData> missingData = new ArrayList<BasicTorrentData>();
 
-
-            for(Integer value : indexStore) {
-                    for(Range range : ranges) {
-                        if(isInRange(value, range)) {
-                            BasicTorrentData missingDataInIndex;
-                            try {
-                                missingDataInIndex = retrieveRecordFromIndex(value.toString());
-                            } catch (ParseException e) {
-                                continue;
-                            } catch (IOException e) {
-                                continue;
-                            }
-                            if(!missingData.contains(missingDataInIndex))
-                                missingData.add(missingDataInIndex);
-                            break;
-                        }
-                    }
-                    if(lastExisting == -1 || value > lastExisting) {
-                        BasicTorrentData missingDataInIndex;
-                        try {
-                            missingDataInIndex = retrieveRecordFromIndex(value.toString());
-                        } catch (ParseException e) {
-                            continue;
-                        } catch (IOException e) {
-                            continue;
-                        }
-                        if(!missingData.contains(missingDataInIndex))
-                            missingData.add(missingDataInIndex);
-                    }
+            //Get from missing ranges
+            for(Range range : ranges) {
+                try {
+                    missingData.addAll(retrieveRecordFromIndexRange(range.getLeft(), range.getRight()));
+                } catch (ParseException e) {
+                    continue;
+                } catch (IOException e) {
+                    continue;
+                }
             }
+            //if sender peer has no index
+            if (lastExisting == -1) {
+                try {
+                    missingData.addAll(retrieveRecordFromIndexRange(0, indexStore.get(indexStore.size()-1)));
+                } catch (ParseException e) {
 
+                } catch (IOException e) {
+
+                }
+            }
+            //Get the last missing values
+            else if (lastExisting < indexStore.get(indexStore.size()-1)) {
+                try {
+                    missingData.addAll(retrieveRecordFromIndexRange(lastExisting+1, indexStore.get(indexStore.size()-1)));
+                } catch (ParseException e) {
+
+                } catch (IOException e) {
+
+                }
+            }
             if(missingData.size() == 0) return;
-
             trigger(new GetUpdatesResponse(self, getUpdatesRequest.getPeerSource(), missingData), networkPort);
         }
     };
@@ -209,7 +202,7 @@ public final class Search extends ComponentDefinition {
             for(BasicTorrentData data : basicTorrentData) {
                 if(!indexStore.contains(data.getId())) {
                     try {
-                        addEntry(data.getTitle(), String.valueOf(data.getId()), data.getMagnet());
+                        addEntry(data.getTitle(), data.getId(), data.getMagnet());
                     } catch (IOException e) {
                         indexStore.remove(data.getId());
                         continue;
@@ -222,12 +215,63 @@ public final class Search extends ComponentDefinition {
                 logger.info(String.format("%s %s", self.getPeerAddress().getId(), String.valueOf(val)));
             }
             logger.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+
+            garbageCollection();
         }
     };
 
-    private BasicTorrentData retrieveRecordFromIndex(String value) throws ParseException, IOException {
+
+    private ArrayList<BasicTorrentData> retrieveRecordFromIndexRange(int from, int to) throws ParseException, IOException {
         // the "title" arg specifies the default field to use when no field is explicitly specified in the query.
-        Query q = new QueryParser(Version.LUCENE_42, "id", analyzer).parse(value);
+        IndexSearcher searcher = null;
+        IndexReader reader;
+
+
+
+
+       // Query q = new QueryParser(Version.LUCENE_42, "id", analyzer).parse("["+from+" TO "+to+"]");
+
+
+        try {
+            reader = DirectoryReader.open(index);
+            searcher = new IndexSearcher(reader);
+        } catch (IOException ex) {
+            java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
+            System.exit(-1);
+        }
+
+        Query q = NumericRangeQuery.newIntRange("id", from, to, true, true);
+        //TopDocs topDocs = searcher.search(query, 10);
+
+        int hitsPerPage = 10;
+        TopScoreDocCollector collector = TopScoreDocCollector.create(hitsPerPage, true);
+
+        searcher.search(q, collector);
+        ScoreDoc[] hits = collector.topDocs().scoreDocs;
+
+        ArrayList<BasicTorrentData> results = new ArrayList<BasicTorrentData>();
+
+
+        //System.out.println("Number of hits: "+hits.length);
+        int i = 0;
+        int docId;
+        Document d;
+        while ( i < hits.length && i < 10 ) {
+            docId = hits[i].doc;
+            d = searcher.doc(docId);
+            results.add(new BasicTorrentData(Integer.parseInt(d.get("id")), d.get("title"), d.get("magnet")));
+            i++;
+        }
+       // System.out.println("Results returned: "+results.size()+" for range "+from+" to "+to+" : ");
+//        for (BasicTorrentData res : results)
+//            System.out.println(res.getId()+" "+res.getTitle());
+        return results;
+    }
+
+    private BasicTorrentData retrieveRecordFromIndex(int value) throws ParseException, IOException {
+        // the "title" arg specifies the default field to use when no field is explicitly specified in the query.
+        //Query q = new QueryParser(Version.LUCENE_42, "id", analyzer).parse(value);
+        Query q = NumericRangeQuery.newIntRange("id", value, value, true, true);
         IndexSearcher searcher = null;
         IndexReader reader;
         try {
@@ -255,6 +299,13 @@ public final class Search extends ComponentDefinition {
         return range.getLeft() <= value && value <= range.getRight();
     }
 
+    private void garbageCollection() {
+        while (indexStore.contains(garbageIndex+1)) {
+            indexStore.remove(garbageIndex+1);
+            garbageIndex += 1;
+        }
+    }
+
     Handler<WebRequest> handleWebRequest = new Handler<WebRequest>() {
         public void handle(WebRequest event) {
             if (event.getDestination() != self.getPeerAddress().getId()) {
@@ -268,7 +319,7 @@ public final class Search extends ComponentDefinition {
             if (args[0].compareToIgnoreCase("search") == 0) {
                 response = new WebResponse(searchPageHtml(args[1]), event, 1, 1);
             } else if (args[0].compareToIgnoreCase("add") == 0) {
-                response = new WebResponse(addEntryHtml(args[1], args[2], args[3]), event, 1, 1);
+                response = new WebResponse(addEntryHtml(args[1], Integer.getInteger(args[2]) , args[3]), event, 1, 1);
             } else {
                 response = new WebResponse(searchPageHtml(event
                         .getTarget()), event, 1, 1);
@@ -301,7 +352,7 @@ public final class Search extends ComponentDefinition {
         return sb.toString();
     }
 
-    private String addEntryHtml(String title, String id, String magnet) {
+    private String addEntryHtml(String title, int id, String magnet) {
         StringBuilder sb = new StringBuilder("<!DOCTYPE html PUBLIC \"-//W3C");
         sb.append("//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR");
         sb.append("/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http:");
@@ -323,7 +374,7 @@ public final class Search extends ComponentDefinition {
         return sb.toString();
     }
 
-    private void addEntry(String title, String id, String magnet) throws IOException {
+    private void addEntry(String title, int id, String magnet) throws IOException {
         IndexWriter w = new IndexWriter(index, config);
         Document doc = new Document();
         doc.add(new TextField("title", title, Field.Store.YES));
@@ -331,14 +382,12 @@ public final class Search extends ComponentDefinition {
         // You may need to make the StringField searchable by NumericRangeQuery. See:
         // http://stackoverflow.com/questions/13958431/lucene-4-0-indexwriter-updatedocument-for-numeric-term
         // http://lucene.apache.org/core/4_2_0/core/org/apache/lucene/document/IntField.html
-        doc.add(new StringField("id", id, Field.Store.YES));
+        doc.add(new IntField("id", id, Field.Store.YES));
         w.addDocument(doc);
         w.close();
 
         logger.info(String.format("%s Added %s", self.getPeerAddress().getId(), id));
-
-        int idVal = Integer.parseInt(id);
-        indexStore.add(idVal);
+        indexStore.add(id);
         Collections.sort(indexStore);
 //
 //
@@ -405,7 +454,7 @@ public final class Search extends ComponentDefinition {
         @Override
         public void handle(AddIndexText event) {
             Random r = new Random(System.currentTimeMillis());
-            String id = Integer.toString(r.nextInt(100000));
+            int id = r.nextInt(100000);
 
             /*Generate random magnet link*/
             String magnet = new BigInteger(130, r).toString(32);
