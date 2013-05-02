@@ -224,7 +224,10 @@ public final class TMan extends ComponentDefinition {
                     break;
                 }
             }
-            if(!found) result.add(first.get(i));
+            if(!found)  {
+                first.get(i).incrementAge();
+                result.add(first.get(i));
+            }
         }
 
         for(int i=0; i< second.size(); i++) {
