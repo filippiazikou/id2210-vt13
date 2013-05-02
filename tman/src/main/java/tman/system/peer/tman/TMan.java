@@ -213,18 +213,7 @@ public final class TMan extends ComponentDefinition {
         ArrayList<PeerDescriptor> result = new ArrayList<PeerDescriptor>();
 
         for(int i=0; i<first.size(); i++) {
-            boolean found = false;
-            for (int j=0; j<second.size(); j++) {
-                if(first.get(i).getPeerAddress().equals(second.get(j).getPeerAddress())) {
-                    if(first.get(i).getAge() >= second.get(j).getAge())
-                        result.add(first.get(i));
-                    else
-                        result.add(second.get(j));
-                    found = true;
-                    break;
-                }
-            }
-            if(!found) result.add(first.get(i));
+            result.add(first.get(i));
         }
 
         for(int i=0; i< second.size(); i++) {
