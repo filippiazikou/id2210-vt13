@@ -3,6 +3,7 @@ package search.system.peer;
 import java.util.LinkedList;
 import java.util.Set;
 
+import common.configuration.TManConfiguration;
 import se.sics.kompics.Component;
 import se.sics.kompics.ComponentDefinition;
 import se.sics.kompics.Handler;
@@ -28,6 +29,7 @@ import common.configuration.CyclonConfiguration;
 import cyclon.system.peer.cyclon.*;
 import se.sics.kompics.web.Web;
 import tman.system.peer.tman.TMan;
+import tman.system.peer.tman.TManInit;
 import tman.system.peer.tman.TManSamplePort;
 
 
@@ -119,6 +121,7 @@ public final class SearchPeer extends ComponentDefinition {
 		public void handle(JoinCompleted event) {
 			trigger(new BootstrapCompleted("Cyclon", peerSelf), bootstrap.getPositive(P2pBootstrap.class));
 			trigger(new SearchInit(peerSelf, num, aggregationConfiguration), search.getControl());
+            trigger(new TManInit(peerSelf, new TManConfiguration(1000)), tman.getControl());
 		}
 	};
 }
