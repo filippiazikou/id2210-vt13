@@ -319,7 +319,7 @@ public final class Search extends ComponentDefinition {
             if (args[0].compareToIgnoreCase("search") == 0) {
                 response = new WebResponse(searchPageHtml(args[1]), event, 1, 1);
             } else if (args[0].compareToIgnoreCase("add") == 0) {
-                response = new WebResponse(addEntryHtml(args[1], Integer.getInteger(args[2]) , args[3]), event, 1, 1);
+                response = new WebResponse(addEntryHtml(args[1], Integer.parseInt(args[2]) , args[3]), event, 1, 1);
             } else {
                 response = new WebResponse(searchPageHtml(event
                         .getTarget()), event, 1, 1);
