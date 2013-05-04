@@ -128,6 +128,7 @@ public final class TMan extends ComponentDefinition {
     Handler<ExchangeMsg.Request> handleTManPartnersRequest = new Handler<ExchangeMsg.Request>() {
         @Override
         public void handle(ExchangeMsg.Request event) {
+
             buffer = merge(view, new ArrayList<PeerDescriptor>(){{new PeerDescriptor(self);}});
             Collections.sort(buffer, new RankComparator(event.getPeerSource()));
 
@@ -136,6 +137,17 @@ public final class TMan extends ComponentDefinition {
 
             Collections.sort(buffer, new RankComparator(self));
             view = selectView();
+
+             /*Increase age for peers that did not appear to the peers of event and remove if > 50*/
+            int age;
+            for (int i = 0 ; i<buffer.size() ; i++) {
+                if (!event.getRandomBuffer().getDescriptors().contains(buffer.get(i)))  {
+                    age = buffer.get(i).incrementAndGetAge();
+                    if (age > 50)
+                        buffer.remove(i);
+                }
+            }
+
         }
     };
     
@@ -154,6 +166,16 @@ public final class TMan extends ComponentDefinition {
                 logger.info(String.format("%s partner - %s", self.getPeerAddress().getId(), view.get(i).getPeerAddress().getPeerAddress().getId()));
             }
             logger.info("++++++++++++++++++++++++++++++++++++");
+
+             /*Increase age for peers that did not appear to the peers of event and remove if > 50*/
+            int age;
+            for (int i = 0 ; i<buffer.size() ; i++) {
+                if (!event.getSelectedBuffer().getDescriptors().contains(buffer.get(i)))  {
+                    age = buffer.get(i).incrementAndGetAge();
+                    if (age > 50)
+                        buffer.remove(i);
+                }
+            }
         }
     };
 

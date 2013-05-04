@@ -215,11 +215,15 @@ public final class Search extends ComponentDefinition {
         IndexSearcher searcher = null;
         IndexReader reader;
 
-        /*
-        get an array of ranges instead of from - to
-        start a loop adding the query results to a new array and stop when this array is more that 10.
-         */
 
+        Query q;
+        int hitsPerPage = 10;
+        TopScoreDocCollector collector;
+        ScoreDoc[] hits;
+        int j;
+        int docId;
+        Document d;
+        ArrayList<BasicTorrentData> results = new ArrayList<BasicTorrentData>();
 
         try {
             reader = DirectoryReader.open(index);
@@ -229,16 +233,9 @@ public final class Search extends ComponentDefinition {
             System.exit(-1);
         }
 
-        Query q;
-        int hitsPerPage = 10;
-        TopScoreDocCollector collector = TopScoreDocCollector.create(hitsPerPage, true);
-        ScoreDoc[] hits;
-        int j;
-        int docId;
-        Document d;
-        ArrayList<BasicTorrentData> results = new ArrayList<BasicTorrentData>();
         for (int i = 0 ; i<ranges.size() ; i++) {
             q = NumericRangeQuery.newIntRange("id", ranges.get(i).getLeft(), ranges.get(i).getRight(), true, true);
+            collector  = TopScoreDocCollector.create(hitsPerPage, true);
             searcher.search(q, collector);
             hits = collector.topDocs().scoreDocs;
             j = 0;
