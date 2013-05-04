@@ -1,6 +1,7 @@
 package search.system.peer.search;
 
 import org.apache.lucene.document.*;
+import org.apache.lucene.queryparser.xml.builders.NumericRangeQueryBuilder;
 import org.apache.lucene.search.*;
 import search.simulator.snapshot.Snapshot;
 import common.configuration.SearchConfiguration;
@@ -13,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Random;
 import java.util.concurrent.locks.Lock;
+
 import java.util.logging.Level;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.index.DirectoryReader;
@@ -24,6 +26,7 @@ import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.RAMDirectory;
 import org.apache.lucene.util.Version;
+import org.apache.lucene.util.NumericUtils.IntRangeBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -159,35 +162,21 @@ public final class Search extends ComponentDefinition {
 
             ArrayList<BasicTorrentData> missingData = new ArrayList<BasicTorrentData>();
 
-            //Get from missing ranges
-            for(Range range : ranges) {
-                try {
-                    missingData.addAll(retrieveRecordFromIndexRange(range.getLeft(), range.getRight()));
-                } catch (ParseException e) {
-                    continue;
-                } catch (IOException e) {
-                    continue;
-                }
-            }
             //if sender peer has no index
             if (lastExisting == -1) {
-                try {
-                    missingData.addAll(retrieveRecordFromIndexRange(0, indexStore.get(indexStore.size()-1)));
-                } catch (ParseException e) {
-
-                } catch (IOException e) {
-
-                }
+                ranges.add(new Range(0, indexStore.get(indexStore.size()-1)));
             }
             //Get the last missing values
             else if (lastExisting < indexStore.get(indexStore.size()-1)) {
-                try {
-                    missingData.addAll(retrieveRecordFromIndexRange(lastExisting+1, indexStore.get(indexStore.size()-1)));
-                } catch (ParseException e) {
+                ranges.add(new Range(lastExisting+1, indexStore.get(indexStore.size()-1)));
+            }
 
-                } catch (IOException e) {
-
-                }
+            try {
+                missingData = retrieveRecordFromIndexRange(ranges);
+            } catch (ParseException e) {
+                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+            } catch (IOException e) {
+                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
             }
             if(missingData.size() == 0) return;
             trigger(new GetUpdatesResponse(self, getUpdatesRequest.getPeerSource(), missingData), networkPort);
@@ -221,15 +210,15 @@ public final class Search extends ComponentDefinition {
     };
 
 
-    private ArrayList<BasicTorrentData> retrieveRecordFromIndexRange(int from, int to) throws ParseException, IOException {
+    private ArrayList<BasicTorrentData> retrieveRecordFromIndexRange(ArrayList<Range> ranges) throws ParseException, IOException {
         // the "title" arg specifies the default field to use when no field is explicitly specified in the query.
         IndexSearcher searcher = null;
         IndexReader reader;
 
-
-
-
-       // Query q = new QueryParser(Version.LUCENE_42, "id", analyzer).parse("["+from+" TO "+to+"]");
+        /*
+        get an array of ranges instead of from - to
+        start a loop adding the query results to a new array and stop when this array is more that 10.
+         */
 
 
         try {
@@ -240,31 +229,33 @@ public final class Search extends ComponentDefinition {
             System.exit(-1);
         }
 
-        Query q = NumericRangeQuery.newIntRange("id", from, to, true, true);
-        //TopDocs topDocs = searcher.search(query, 10);
-
+        Query q;
         int hitsPerPage = 10;
         TopScoreDocCollector collector = TopScoreDocCollector.create(hitsPerPage, true);
-
-        searcher.search(q, collector);
-        ScoreDoc[] hits = collector.topDocs().scoreDocs;
-
-        ArrayList<BasicTorrentData> results = new ArrayList<BasicTorrentData>();
-
-
-        //System.out.println("Number of hits: "+hits.length);
-        int i = 0;
+        ScoreDoc[] hits;
+        int j;
         int docId;
         Document d;
-        while ( i < hits.length && i < 10 ) {
-            docId = hits[i].doc;
-            d = searcher.doc(docId);
-            results.add(new BasicTorrentData(Integer.parseInt(d.get("id")), d.get("title"), d.get("magnet")));
-            i++;
+        ArrayList<BasicTorrentData> results = new ArrayList<BasicTorrentData>();
+        for (int i = 0 ; i<ranges.size() ; i++) {
+            q = NumericRangeQuery.newIntRange("id", ranges.get(i).getLeft(), ranges.get(i).getRight(), true, true);
+            searcher.search(q, collector);
+            hits = collector.topDocs().scoreDocs;
+            j = 0;
+            while ( j < hits.length && j < 10 ) {
+                docId = hits[j].doc;
+                d = searcher.doc(docId);
+                results.add(new BasicTorrentData(Integer.parseInt(d.get("id")), d.get("title"), d.get("magnet")));
+                j++;
+            }
+            if (results.size() >= 10)
+                break;
         }
-       // System.out.println("Results returned: "+results.size()+" for range "+from+" to "+to+" : ");
-//        for (BasicTorrentData res : results)
-//            System.out.println(res.getId()+" "+res.getTitle());
+
+        /*Keep the first 10 items*/
+        for (int i=10 ; i<results.size() ; i++)
+            results.remove(i);
+
         return results;
     }
 
