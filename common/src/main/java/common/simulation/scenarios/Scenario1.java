@@ -28,17 +28,18 @@ public class Scenario1 extends Scenario {
                     raise(10, Operations.addIndexEntry(), uniform(13));
                 }
             };
-//
-//            StochasticProcess process4 = new StochasticProcess() {
-//                {
-//                    raise(1, Operations.peerFail,
-//                }
-//            };
+
+            StochasticProcess process4 = new StochasticProcess() {
+                {
+                    eventInterArrivalTime(constant(100));
+                    raise(1, Operations.peerFail, uniform(1, 1));
+                }
+            };
 
             process1.startAt(1000);
             process2.startAfterTerminationOf(2000, process1);
             process3.startAfterTerminationOf(2000, process2);
-//            process4.startAt(15000);
+            process4.startAfterTerminationOf(4000, process3);
         }
     };
 

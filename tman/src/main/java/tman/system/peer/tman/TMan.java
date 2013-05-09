@@ -137,7 +137,8 @@ public final class TMan extends ComponentDefinition {
             }
 
             isLeaderSuspected = true;
-            requiredAcks = view.size()/2 +1;
+            logger.info(String.format("%s - leader suspected", self.getPeerAddress().getId()));
+            requiredAcks = (int)Math.ceil(((double)view.size())/2);
             for(int i=0; i<view.size(); i++)
                 trigger(new IsLeaderSuspectedMessage(self, view.get(i).getPeerAddress()), networkPort);
         }
@@ -161,12 +162,17 @@ public final class TMan extends ComponentDefinition {
 
             logger.info(String.format("%s - got acks!", self.getPeerAddress().getId()));
 
+            PeerDescriptor toRemove = null;
             for(int i=0; i<view.size(); i++) {
                 if(view.get(i).getPeerAddress().getPeerAddress().getId() == leader.getPeerAddress().getId()) {
-                    view.remove(view.get(i));
-                    buffer.remove(view.get(i));
+                    toRemove = view.get(i);
                     break;
                 }
+            }
+
+            if(toRemove !=null) {
+                view.remove(toRemove);
+                if(buffer.contains(toRemove)) buffer.remove(toRemove);
             }
 
             leader = null;

@@ -29,9 +29,9 @@ public class Operations {
 	}
 
 //-------------------------------------------------------------------
-	public static Operation1<PeerFail, BigInteger> peerFail = new Operation1<PeerFail, BigInteger>() {
-		public PeerFail generate(BigInteger id) {
-			return new PeerFail(id);
+	public static Operation1<PeerFail, Long> peerFail = new Operation1<PeerFail, Long>() {
+		public PeerFail generate(Long id) {
+			return new PeerFail(BigInteger.valueOf(id));
 		}
 	};
 
