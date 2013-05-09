@@ -6,17 +6,17 @@ import se.sics.kompics.Event;
 
 public final class PeerJoin extends Event {
 
-	private final BigInteger peerId;
+	private final Long peerId;
 	private final int num;
 
 //-------------------------------------------------------------------	
-	public PeerJoin(BigInteger peerId, int num) {
+	public PeerJoin(Long peerId, int num) {
 		this.peerId = peerId;
 		this.num = num;
 	}
 
 //-------------------------------------------------------------------	
-	public BigInteger getPeerId() {
+	public Long getPeerId() {
 		return this.peerId;
 	}
 

@@ -39,20 +39,20 @@ public final class CyclonSimulator extends ComponentDefinition {
     Positive<SimulatorPort> simulator = positive(SimulatorPort.class);
     Positive<Network> network = positive(Network.class);
     Positive<Timer> timer = positive(Timer.class);
-    private final HashMap<BigInteger, Component> peers;
-    private final HashMap<BigInteger, PeerAddress> peersAddress;
+    private final HashMap<Long, Component> peers;
+    private final HashMap<Long, PeerAddress> peersAddress;
     private BootstrapConfiguration bootstrapConfiguration;
     private CyclonConfiguration cyclonConfiguration;
     private int peerIdSequence;
-    private BigInteger cyclonIdentifierSpaceSize;
-    private ConsistentHashtable<BigInteger> cyclonView;
+    private Long cyclonIdentifierSpaceSize;
+    private ConsistentHashtable<Long> cyclonView;
     private AsIpGenerator ipGenerator = AsIpGenerator.getInstance(125);
 //-------------------------------------------------------------------	
 
     public CyclonSimulator() {
-        peers = new HashMap<BigInteger, Component>();
-        peersAddress = new HashMap<BigInteger, PeerAddress>();
-        cyclonView = new ConsistentHashtable<BigInteger>();
+        peers = new HashMap<Long, Component>();
+        peersAddress = new HashMap<Long, PeerAddress>();
+        cyclonView = new ConsistentHashtable<Long>();
 
         subscribe(handleInit, control);
 
@@ -81,13 +81,13 @@ public final class CyclonSimulator extends ComponentDefinition {
     Handler<PeerJoin> handlePeerJoin = new Handler<PeerJoin>() {
         public void handle(PeerJoin event) {
             int num = event.getNum();
-            BigInteger id = event.getPeerId();
+            Long id = event.getPeerId();
 
             // join with the next id if this id is taken
-            BigInteger successor = cyclonView.getNode(id);
+            Long successor = cyclonView.getNode(id);
 
             while (successor != null && successor.equals(id)) {
-                id = id.add(BigInteger.ONE).mod(cyclonIdentifierSpaceSize);
+                id = (id +1) % cyclonIdentifierSpaceSize;
                 successor = cyclonView.getNode(id);
             }
 
@@ -100,7 +100,7 @@ public final class CyclonSimulator extends ComponentDefinition {
 //-------------------------------------------------------------------	
     Handler<PeerFail> handlePeerFail = new Handler<PeerFail>() {
         public void handle(PeerFail event) {
-            BigInteger id = cyclonView.getNode(event.getCyclonId());
+            Long id = cyclonView.getNode(event.getCyclonId());
 
             if (cyclonView.size() == 0) {
                 System.err.println("Empty network");
@@ -119,7 +119,7 @@ public final class CyclonSimulator extends ComponentDefinition {
     };
 
 //-------------------------------------------------------------------	
-    private final Component createAndStartNewPeer(BigInteger id, int num) {
+    private final Component createAndStartNewPeer(Long id, int num) {
         Component peer = create(Peer.class);
         int peerId = ++peerIdSequence;
         InetAddress ip = ipGenerator.generateIP();
@@ -140,7 +140,7 @@ public final class CyclonSimulator extends ComponentDefinition {
     }
 
 //-------------------------------------------------------------------	
-    private final void stopAndDestroyPeer(BigInteger id) {
+    private final void stopAndDestroyPeer(Long id) {
         Component peer = peers.get(id);
 
         trigger(new Stop(), peer.getControl());

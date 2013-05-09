@@ -41,14 +41,14 @@ public final class SearchSimulator extends ComponentDefinition {
     Positive<Network> network = positive(Network.class);
     Positive<Timer> timer = positive(Timer.class);
     Negative<Web> webIncoming = negative(Web.class);
-    private final HashMap<BigInteger, Component> peers;
-    private final HashMap<BigInteger, PeerAddress> peersAddress;
+    private final HashMap<Long, Component> peers;
+    private final HashMap<Long, PeerAddress> peersAddress;
     private BootstrapConfiguration bootstrapConfiguration;
     private CyclonConfiguration cyclonConfiguration;
     private SearchConfiguration searchConfiguration;
     private int peerIdSequence;
-    private BigInteger identifierSpaceSize;
-    private ConsistentHashtable<BigInteger> ringNodes;
+    private Long identifierSpaceSize;
+    private ConsistentHashtable<Long> ringNodes;
     private AsIpGenerator ipGenerator = AsIpGenerator.getInstance(125);
 
     static String[] articles = {" ", "The ", "A "};
@@ -60,9 +60,9 @@ public final class SearchSimulator extends ComponentDefinition {
     
 //-------------------------------------------------------------------	
     public SearchSimulator() {
-        peers = new HashMap<BigInteger, Component>();
-        peersAddress = new HashMap<BigInteger, PeerAddress>();
-        ringNodes = new ConsistentHashtable<BigInteger>();
+        peers = new HashMap<Long, Component>();
+        peersAddress = new HashMap<Long, PeerAddress>();
+        ringNodes = new ConsistentHashtable<Long>();
 
         subscribe(handleInit, control);
         subscribe(handleGenerateReport, timer);
@@ -108,7 +108,7 @@ public final class SearchSimulator extends ComponentDefinition {
     Handler<AddIndexEntry> handleAddIndexEntry = new Handler<AddIndexEntry>() {
         @Override
         public void handle(AddIndexEntry event) {
-            BigInteger successor = ringNodes.getNode(event.getId());
+            Long successor = ringNodes.getNode(event.getId());
             Component peer = peers.get(successor);
             
             trigger(new AddIndexText(randomText()), peer.getNegative(IndexPort.class));
@@ -118,13 +118,13 @@ public final class SearchSimulator extends ComponentDefinition {
     Handler<PeerJoin> handlePeerJoin = new Handler<PeerJoin>() {
         public void handle(PeerJoin event) {
             int num = event.getNum();
-            BigInteger id = event.getPeerId();
+            Long id = event.getPeerId();
 
             // join with the next id if this id is taken
-            BigInteger successor = ringNodes.getNode(id);
+            Long successor = ringNodes.getNode(id);
 
             while (successor != null && successor.equals(id)) {
-                id = id.add(BigInteger.ONE).mod(identifierSpaceSize);
+                id = (id +1) % identifierSpaceSize;
                 successor = ringNodes.getNode(id);
             }
 
@@ -135,7 +135,7 @@ public final class SearchSimulator extends ComponentDefinition {
 //-------------------------------------------------------------------	
     Handler<PeerFail> handlePeerFail = new Handler<PeerFail>() {
         public void handle(PeerFail event) {
-            BigInteger id = ringNodes.getNode(event.getCyclonId());
+            Long id = ringNodes.getNode(event.getCyclonId());
 
             if (ringNodes.size() == 0) {
                 System.err.println("Empty network");
@@ -154,7 +154,7 @@ public final class SearchSimulator extends ComponentDefinition {
     };
 
 //-------------------------------------------------------------------	
-    private final void createAndStartNewPeer(BigInteger id, int num) {
+    private final void createAndStartNewPeer(Long id, int num) {
         Component peer = create(SearchPeer.class);
         int peerId = ++peerIdSequence;
         InetAddress ip = ipGenerator.generateIP();
@@ -174,7 +174,7 @@ public final class SearchSimulator extends ComponentDefinition {
     }
 
 //-------------------------------------------------------------------	
-    private final void stopAndDestroyPeer(BigInteger id) {
+    private final void stopAndDestroyPeer(Long id) {
         Component peer = peers.get(id);
 
         trigger(new Stop(), peer.getControl());

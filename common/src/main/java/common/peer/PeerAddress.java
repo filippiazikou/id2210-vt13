@@ -7,16 +7,16 @@ import se.sics.kompics.p2p.overlay.OverlayAddress;
 
 public final class PeerAddress extends OverlayAddress implements Comparable<PeerAddress> {
 	private static final long serialVersionUID = -7582889514221620065L;
-	private final BigInteger peerId;
+	private final Long peerId;
 
 //-------------------------------------------------------------------
-	public PeerAddress(Address address, BigInteger peerId) {
+	public PeerAddress(Address address, Long peerId) {
 		super(address);
 		this.peerId = peerId;
 	}
 
 //-------------------------------------------------------------------
-	public BigInteger getPeerId() {
+	public Long getPeerId() {
 		return peerId;
 	}
 

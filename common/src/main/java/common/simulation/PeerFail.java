@@ -6,15 +6,15 @@ import se.sics.kompics.Event;
 
 public final class PeerFail extends Event {
 
-	private final BigInteger cyclonId;
+	private final Long cyclonId;
 
 //-------------------------------------------------------------------	
-	public PeerFail(BigInteger cyclonId) {
+	public PeerFail(Long cyclonId) {
 		this.cyclonId = cyclonId;
 	}
 
 //-------------------------------------------------------------------	
-	public BigInteger getCyclonId() {
+	public Long getCyclonId() {
 		return cyclonId;
 	}
 }
