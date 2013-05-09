@@ -8,16 +8,20 @@ public final class TManInit extends Init {
 
 	private final PeerAddress peerSelf;
 	private final TManConfiguration configuration;
+    private final int excahngeSampleSize;
+    private final int viewSize;
 
 //-------------------------------------------------------------------
-	public TManInit(PeerAddress peerSelf, TManConfiguration configuration) {
-		super();
-		this.peerSelf = peerSelf;
+    public TManInit(PeerAddress peerSelf, TManConfiguration configuration, int excahngeSampleSize, int viewSize) {
+        super();
 
-		this.configuration = configuration;
-	}
+        this.peerSelf = peerSelf;
+        this.configuration = configuration;
+        this.excahngeSampleSize = excahngeSampleSize;
+        this.viewSize = viewSize;
+    }
 
-//-------------------------------------------------------------------
+    //-------------------------------------------------------------------
 	public PeerAddress getSelf() {
 		return this.peerSelf;
 	}
@@ -26,4 +30,12 @@ public final class TManInit extends Init {
 	public TManConfiguration getConfiguration() {
 		return this.configuration;
 	}
+
+    public int getExcahngeSampleSize() {
+        return excahngeSampleSize;
+    }
+
+    public int getViewSize() {
+        return viewSize;
+    }
 }

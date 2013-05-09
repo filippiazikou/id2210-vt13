@@ -35,8 +35,18 @@ public final class TMan extends ComponentDefinition {
     private PeerAddress self;
     private ArrayList<PeerAddress> tmanPartners;
     private TManConfiguration tmanConfiguration;
-    private int c = 5;
-    private int m = 3;
+    private LeaderKnowledge leaderKnowledge = LeaderKnowledge.NO;
+    private PeerAddress leader = null;
+    boolean isWaitingForElectionMessage = false;
+    private int T = 3000;
+    private int cyclesCount = 0;
+    private int cyclesForLeaderTest = 5;
+    private int c;
+    private int m;
+    private boolean pingFromLeader = false;
+    private int requiredAcks = 0;
+    private boolean isLeaderSuspected = false;
+    private ArrayList<PeerAddress> arrayForGradientLeaders = new ArrayList<PeerAddress>();
 
     private ArrayList<PeerDescriptor> view = new ArrayList<PeerDescriptor>();
     private ArrayList<PeerDescriptor> buffer = new ArrayList<PeerDescriptor>();
@@ -63,6 +73,17 @@ public final class TMan extends ComponentDefinition {
         subscribe(handleCyclonSample, cyclonSamplePort);
         subscribe(handleTManPartnersResponse, networkPort);
         subscribe(handleTManPartnersRequest, networkPort);
+        subscribe(coordinatorMessageHandler, networkPort);
+        subscribe(electionMessageHandler, networkPort);
+        subscribe(okMessageHandler, networkPort);
+        subscribe(electionMessageTimeoutHandler, timerPort);
+        subscribe(electionMessageWaitingTimeoutHandler, timerPort);
+        subscribe(pingScheduleHandler, timerPort);
+        subscribe(pingResponseScheduleHandler, timerPort);
+        subscribe(pingMessageHandler, networkPort);
+        subscribe(pingOkMessageHandler, networkPort);
+        subscribe(isLeaderSuspectedMessageHandler, networkPort);
+        subscribe(isLeaderSuspectedResultMessageHandler, networkPort);
     }
 //-------------------------------------------------------------------	
     Handler<TManInit> handleInit = new Handler<TManInit>() {
@@ -71,14 +92,104 @@ public final class TMan extends ComponentDefinition {
             self = init.getSelf();
             tmanConfiguration = init.getConfiguration();
             period = tmanConfiguration.getPeriod();
+            c = init.getViewSize();
+            m = init.getExcahngeSampleSize();
 
             SchedulePeriodicTimeout rst = new SchedulePeriodicTimeout(period, period);
             rst.setTimeoutEvent(new TManSchedule(rst));
             trigger(rst, timerPort);
 
+            ScheduleTimeout pingLeaderTimeout = new ScheduleTimeout(period);
+            pingLeaderTimeout.setTimeoutEvent(new PingSchedule(pingLeaderTimeout));
+            trigger(pingLeaderTimeout, timerPort);
+
         }
     };
-//-------------------------------------------------------------------	
+//-------------------------------------------------------------------
+    Handler<PingSchedule> pingScheduleHandler = new Handler<PingSchedule>() {
+    @Override
+    public void handle(PingSchedule pingSchedule) {
+            if(leader == null) {
+                ScheduleTimeout pingLeaderTimeout = new ScheduleTimeout(period);
+                pingLeaderTimeout.setTimeoutEvent(new PingSchedule(pingLeaderTimeout));
+                trigger(pingLeaderTimeout, timerPort);
+                return;
+            }
+
+            ScheduleTimeout pingResponseTimeout = new ScheduleTimeout(T);
+            pingResponseTimeout.setTimeoutEvent(new PingResponseSchedule(pingResponseTimeout));
+            pingFromLeader = false;
+            trigger(new PingMessage(self, leader), networkPort);
+            trigger(pingResponseTimeout, timerPort);
+        }
+    };
+
+    Handler<PingResponseSchedule> pingResponseScheduleHandler = new Handler<PingResponseSchedule>() {
+    @Override
+    public void handle(PingResponseSchedule pingResponseSchedule) {
+            if(pingFromLeader) {
+                ScheduleTimeout pingResponseTimeout = new ScheduleTimeout(T);
+                pingResponseTimeout.setTimeoutEvent(new PingResponseSchedule(pingResponseTimeout));
+                pingFromLeader = false;
+                trigger(new PingMessage(self, leader), networkPort);
+                trigger(pingResponseTimeout, timerPort);
+                return;
+            }
+
+            isLeaderSuspected = true;
+            requiredAcks = view.size()/2 +1;
+            for(int i=0; i<view.size(); i++)
+                trigger(new IsLeaderSuspectedMessage(self, view.get(i).getPeerAddress()), networkPort);
+        }
+    };
+
+    Handler<IsLeaderSuspectedMessage> isLeaderSuspectedMessageHandler = new Handler<IsLeaderSuspectedMessage>() {
+        @Override
+        public void handle(IsLeaderSuspectedMessage isLeaderSuspectedMessage) {
+            trigger(new IsLeaderSuspectedResultMessage(self, isLeaderSuspectedMessage.getPeerSource(), isLeaderSuspected), networkPort);
+        }
+    };
+
+    Handler<IsLeaderSuspectedResultMessage> isLeaderSuspectedResultMessageHandler = new Handler<IsLeaderSuspectedResultMessage>() {
+        @Override
+        public void handle(IsLeaderSuspectedResultMessage isLeaderSuspectedResultMessage) {
+            if(!isLeaderSuspectedResultMessage.isLeaderSuspected())
+                return;
+
+            requiredAcks--;
+            if(requiredAcks != 0) return;
+
+            logger.info(String.format("%s - got acks!", self.getPeerAddress().getId()));
+
+            for(int i=0; i<view.size(); i++) {
+                if(view.get(i).getPeerAddress().getPeerAddress().getId() == leader.getPeerAddress().getId()) {
+                    view.remove(view.get(i));
+                    buffer.remove(view.get(i));
+                    break;
+                }
+            }
+
+            leader = null;
+
+            StartLeaderElection(null);
+        }
+    };
+
+    Handler<PingMessage> pingMessageHandler = new Handler<PingMessage>() {
+        @Override
+        public void handle(PingMessage pingMessage) {
+            trigger(new PingOkMessage(self, pingMessage.getPeerSource()), networkPort);
+        }
+    };
+
+    Handler<PingOkMessage> pingOkMessageHandler = new Handler<PingOkMessage>() {
+        @Override
+        public void handle(PingOkMessage pingOkMessage) {
+            isLeaderSuspected = false;
+            pingFromLeader = true;
+        }
+    };
+//-------------------------------------------------------------------
     Handler<TManSchedule> handleRound = new Handler<TManSchedule>() {
         @Override
         public void handle(TManSchedule event) {
@@ -161,11 +272,11 @@ public final class TMan extends ComponentDefinition {
             Collections.sort(buffer, new RankComparator(self));
             view = selectView();
 
-            logger.info("============= View =============");
-            for(int i=0; i<view.size(); i++) {
-                logger.info(String.format("%s partner - %s", self.getPeerAddress().getId(), view.get(i).getPeerAddress().getPeerAddress().getId()));
-            }
-            logger.info("++++++++++++++++++++++++++++++++++++");
+//            logger.info("============= View =============");
+//            for(int i=0; i<view.size(); i++) {
+//                logger.info(String.format("%s partner - %s", self.getPeerAddress().getId(), view.get(i).getPeerAddress().getPeerAddress().getId()));
+//            }
+//            logger.info("++++++++++++++++++++++++++++++++++++");
 
              /*Increase age for peers that did not appear to the peers of event and remove if > 50*/
             int age;
@@ -176,6 +287,132 @@ public final class TMan extends ComponentDefinition {
                         buffer.remove(i);
                 }
             }
+
+            if(cyclesCount == -1) return;
+
+            if(leader != null || self.getPeerAddress().getId() != 1) {
+                cyclesCount = -1;
+                return;
+            }
+
+            cyclesCount++;
+            if(cyclesCount != cyclesForLeaderTest) return;
+
+            cyclesCount = -1;
+            StartLeaderElection(null);
+        }
+    };
+
+    Handler<CoordinatorMessage> coordinatorMessageHandler = new Handler<CoordinatorMessage>() {
+        @Override
+        public void handle(CoordinatorMessage coordinatorMessage) {
+            leader = coordinatorMessage.getPeerSource();
+
+            for(int i=0; i< view.size(); i++) {
+                if(view.get(i).getPeerAddress().getPeerAddress().getId() < leader.getPeerAddress().getId()) {
+                    view.remove(view.get(i));
+                }
+            }
+
+            for(int i=0; i< buffer.size(); i++) {
+                if(buffer.get(i).getPeerAddress().getPeerAddress().getId() < leader.getPeerAddress().getId()) {
+                    buffer.remove(buffer.get(i));
+                }
+            }
+
+            logger.info(String.format("%s - Leader: %s", self.getPeerAddress().getId(), leader.getPeerAddress().getId()));
+        }
+    };
+
+    private void StartLeaderElection(ArrayList<PeerAddress> additionalPeer) {
+        if(leader != null) return;
+
+        logger.info(String.format("%s - starting leader election", self.getPeerAddress().getId()));
+
+        Collections.sort(view, new UtilityRanking());
+
+        if(view.size() > 0 && view.get(0).getPeerAddress().getPeerAddress().getId() >= self.getPeerAddress().getId()) {
+            leaderKnowledge = LeaderKnowledge.I_M_THE_LEADER;
+            leader = self;
+            logger.info(String.format("%s - Leader: %s", self.getPeerAddress().getId(), leader.getPeerAddress().getId()));
+
+            for(int i=0; i < view.size(); i++) {
+                trigger(new CoordinatorMessage(self, view.get(i).getPeerAddress()), networkPort);
+            }
+            return;
+        }
+
+        leaderKnowledge = LeaderKnowledge.MAYBE_ME;
+        for(int i=0; i<view.size(); i++) {
+            if(view.get(i).getPeerAddress().getPeerAddress().getId() >= self.getPeerAddress().getId())
+                break;
+
+            trigger(new ElectionMessage(self, view.get(i).getPeerAddress()), networkPort);
+        }
+
+        if(additionalPeer != null) {
+            for(int i=0; i< additionalPeer.size(); i++) {
+                trigger(new ElectionMessage(self, additionalPeer.get(i)), networkPort);
+                arrayForGradientLeaders.remove(additionalPeer.get(i));
+            }
+        }
+
+        ScheduleTimeout rst = new ScheduleTimeout(T);
+        rst.setTimeoutEvent(new ElectionMessageTimeout(rst));
+        trigger(rst, timerPort);
+    }
+
+    Handler<ElectionMessageTimeout> electionMessageTimeoutHandler = new Handler<ElectionMessageTimeout>() {
+        @Override
+        public void handle(ElectionMessageTimeout electionMessageTimeout) {
+            if(leaderKnowledge == LeaderKnowledge.MAYBE_ME) {
+                for(int i=0; i < view.size(); i++)
+                    trigger(new CoordinatorMessage(self, view.get(i).getPeerAddress()), networkPort);
+                return;
+            }
+        }
+    };
+
+    Handler<ElectionMessage> electionMessageHandler = new Handler<ElectionMessage>() {
+        @Override
+        public void handle(ElectionMessage electionMessage) {
+            trigger(new OkMessage(self, electionMessage.getPeerSource()), networkPort);
+
+            if(isWaitingForElectionMessage) {
+                isWaitingForElectionMessage = false;
+                return;
+            }
+
+            if(self.getPeerAddress().getId() < electionMessage.getPeerSource().getPeerAddress().getId()) {
+                arrayForGradientLeaders.add(electionMessage.getPeerSource());
+                StartLeaderElection(arrayForGradientLeaders);
+            }
+        }
+    };
+
+    Handler<OkMessage> okMessageHandler = new Handler<OkMessage>() {
+        @Override
+        public void handle(OkMessage okMessage) {
+            if(okMessage.getPeerSource().getPeerAddress().getId() < self.getPeerAddress().getId()) {
+                leaderKnowledge = LeaderKnowledge.NO;
+                isWaitingForElectionMessage = true;
+
+                ScheduleTimeout rst = new ScheduleTimeout(T);
+                rst.setTimeoutEvent(new ElectionMessageWaitingTimeout(rst));
+                trigger(rst, timerPort);
+            }
+        }
+    };
+
+    Handler<ElectionMessageWaitingTimeout> electionMessageWaitingTimeoutHandler = new Handler<ElectionMessageWaitingTimeout>() {
+        @Override
+        public void handle(ElectionMessageWaitingTimeout electionMessageWaitingTimeout) {
+            if(isWaitingForElectionMessage && leaderKnowledge == LeaderKnowledge.NO) {
+                isWaitingForElectionMessage = false;
+                leaderKnowledge = LeaderKnowledge.MAYBE_ME;
+                StartLeaderElection(null);
+            }
+
         }
     };
 

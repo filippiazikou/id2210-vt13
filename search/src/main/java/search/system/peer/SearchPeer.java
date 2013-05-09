@@ -121,7 +121,7 @@ public final class SearchPeer extends ComponentDefinition {
 		public void handle(JoinCompleted event) {
 			trigger(new BootstrapCompleted("Cyclon", peerSelf), bootstrap.getPositive(P2pBootstrap.class));
 			trigger(new SearchInit(peerSelf, num, aggregationConfiguration), search.getControl());
-            trigger(new TManInit(peerSelf, new TManConfiguration(1000)), tman.getControl());
+            trigger(new TManInit(peerSelf, new TManConfiguration(1000), 3, 5), tman.getControl());
 		}
 	};
 }

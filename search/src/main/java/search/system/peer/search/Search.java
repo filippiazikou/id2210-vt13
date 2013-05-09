@@ -142,13 +142,13 @@ public final class Search extends ComponentDefinition {
                 i++;
             }
 
-            logger.info(String.format("===========Missing ranges on %s ============", self.getPeerAddress().getId()));
-            for(Range range : missingValues){
-                logger.info(String.format("%s - Range [%s, %s]", self.getPeerAddress().getId(), range.getLeft(), range.getRight()));
-            }
-
-            logger.info(String.format("%s - Last: %s", self.getPeerAddress().getId(), lastExisting));
-            logger.info("++++++++++++++++++++++++++++++++++++++++++++++++++");
+//            logger.info(String.format("===========Missing ranges on %s ============", self.getPeerAddress().getId()));
+//            for(Range range : missingValues){
+//                logger.info(String.format("%s - Range [%s, %s]", self.getPeerAddress().getId(), range.getLeft(), range.getRight()));
+//            }
+//
+//            logger.info(String.format("%s - Last: %s", self.getPeerAddress().getId(), lastExisting));
+//            logger.info("++++++++++++++++++++++++++++++++++++++++++++++++++");
 
             trigger(new GetUpdatesRequest(missingValues, lastExisting, self, selectedPeer), networkPort);
         }
@@ -199,11 +199,11 @@ public final class Search extends ComponentDefinition {
                 }
             }
 
-            logger.info("=========== Index on "+ self.getPeerAddress().getId()+" ===================");
-            for (Integer val : indexStore) {
-                logger.info(String.format("%s %s", self.getPeerAddress().getId(), String.valueOf(val)));
-            }
-            logger.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+//            logger.info("=========== Index on "+ self.getPeerAddress().getId()+" ===================");
+//            for (Integer val : indexStore) {
+//                logger.info(String.format("%s %s", self.getPeerAddress().getId(), String.valueOf(val)));
+//            }
+//            logger.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
             garbageCollection();
         }
