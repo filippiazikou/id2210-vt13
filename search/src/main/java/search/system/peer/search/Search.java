@@ -1,8 +1,8 @@
 package search.system.peer.search;
 
 import org.apache.lucene.document.*;
-import org.apache.lucene.queryparser.xml.builders.NumericRangeQueryBuilder;
 import org.apache.lucene.search.*;
+import se.sics.kompics.timer.ScheduleTimeout;
 import search.simulator.snapshot.Snapshot;
 import common.configuration.SearchConfiguration;
 import common.peer.PeerAddress;
@@ -13,7 +13,6 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Random;
-import java.util.concurrent.locks.Lock;
 
 import java.util.logging.Level;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
@@ -26,7 +25,6 @@ import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.RAMDirectory;
 import org.apache.lucene.util.Version;
-import org.apache.lucene.util.NumericUtils.IntRangeBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +40,9 @@ import se.sics.kompics.web.WebRequest;
 import se.sics.kompics.web.WebResponse;
 import search.system.peer.AddIndexText;
 import search.system.peer.IndexPort;
+import tman.system.peer.tman.AddEntryACK;
 import tman.system.peer.tman.TManSample;
+import tman.system.peer.tman.AddEntryRequest;
 import tman.system.peer.tman.TManSamplePort;
 
 /**
@@ -71,6 +71,10 @@ public final class Search extends ComponentDefinition {
     Directory index = new RAMDirectory();
     IndexWriterConfig config = new IndexWriterConfig(Version.LUCENE_42, analyzer);
 
+    private int lastIdWritten = 0;
+    ArrayList<Integer> requestIds = new ArrayList<Integer>();
+    ArrayList<Integer> receivedAcks = new ArrayList<Integer>();
+
     private int latestMissingIndexValue =0;
     private int garbageIndex = -1;
 
@@ -79,12 +83,16 @@ public final class Search extends ComponentDefinition {
 
         subscribe(handleInit, control);
         subscribe(handleUpdateIndex, timerPort);
+        subscribe(handleGarbageRequesId, timerPort);
+        subscribe(handleAddEntryACKTimer, timerPort);
         subscribe(handleWebRequest, webPort);
         subscribe(handleCyclonSample, cyclonSamplePort);
         subscribe(handleTManSample, tmanSamplePort);
         subscribe(handleAddIndexText, indexPort);
         subscribe(getUpdatesRequestHandler, networkPort);
         subscribe(getUpdatesResponseHandler, networkPort);
+        subscribe(handleAddEntryRequest, tmanSamplePort);
+        subscribe(handleAddEntryACK, tmanSamplePort);
     }
 //-------------------------------------------------------------------	
     Handler<SearchInit> handleInit = new Handler<SearchInit>() {
@@ -99,15 +107,16 @@ public final class Search extends ComponentDefinition {
             trigger(rst, timerPort);
 
             Snapshot.updateNum(self, num);
-            try {
-                String title = "The Art of Computer Science";
-                int id = 100;
-                String magnet = "a896f7155237fb27e2eaa06033b5796d7ae84a1d";
-                addEntry(title,id, magnet);
-            } catch (IOException ex) {
-                java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
-                System.exit(-1);
-            }
+            String title = "The Art of Computer Science";
+            int id = 100;
+            String magnet = "a896f7155237fb27e2eaa06033b5796d7ae84a1d";
+            //addEntry(title,id, magnet);
+            trigger(new AddEntryRequest(self, self, self, title, magnet, id), tmanSamplePort);
+            //Start Timer for ACK
+            ScheduleTimeout rst2 = new ScheduleTimeout(10000);
+            rst2.setTimeoutEvent(new AddEntryACKTimeout(rst2, id, title, magnet));
+            trigger(rst2, timerPort);
+
         }
     };
 //-------------------------------------------------------------------	
@@ -154,6 +163,7 @@ public final class Search extends ComponentDefinition {
         }
     };
 
+
     Handler<GetUpdatesRequest> getUpdatesRequestHandler = new Handler<GetUpdatesRequest>() {
         @Override
         public void handle(GetUpdatesRequest getUpdatesRequest) {
@@ -162,8 +172,12 @@ public final class Search extends ComponentDefinition {
 
             ArrayList<BasicTorrentData> missingData = new ArrayList<BasicTorrentData>();
 
-            //if sender peer has no index
-            if (lastExisting == -1) {
+            //if current peer has no index to reply
+            if (indexStore.size() == 0)
+                return ;
+
+            //if sender requesting peer has no index
+            if (lastExisting == -1 ) {
                 ranges.add(new Range(0, indexStore.get(indexStore.size()-1)));
             }
             //Get the last missing values
@@ -351,18 +365,22 @@ public final class Search extends ComponentDefinition {
         sb.append("Arial, Helvetica, sans-serif; color: #0099FF;}--></style>");
         sb.append("</head><body><h2 align=\"center\" class=\"style2\">");
         sb.append("ID2210 Uploaded Entry</h2><br>");
-        try {
-            addEntry(title, id, magnet);
-            sb.append("Entry: ").append(title).append(" - ").append(id).append(" - ").append(magnet);
-        } catch (IOException ex) {
-            sb.append(ex.getMessage());
-            java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
-        }
+
+        // addEntry(title, id, magnet);
+        trigger(new AddEntryRequest(self, self, self, title, magnet, id), tmanSamplePort);
+        ScheduleTimeout rst = new ScheduleTimeout(10000);
+        rst.setTimeoutEvent(new AddEntryACKTimeout(rst, id, title, magnet));
+        trigger(rst, timerPort);
+
+        sb.append("Entry: ").append(title).append(" - ").append(id).append(" - ").append(magnet);
         sb.append("</body></html>");
         return sb.toString();
     }
 
     private void addEntry(String title, int id, String magnet) throws IOException {
+
+        //logger.info(self.getPeerAddress().getId() + " - adding index entry: {}-{}-{}"+magnet, title, id);
+
         IndexWriter w = new IndexWriter(index, config);
         Document doc = new Document();
         doc.add(new TextField("title", title, Field.Store.YES));
@@ -377,11 +395,6 @@ public final class Search extends ComponentDefinition {
         logger.info(String.format("%s Added %s", self.getPeerAddress().getId(), id));
         indexStore.add(id);
         Collections.sort(indexStore);
-//
-//
-//        if (idVal == latestMissingIndexValue + 1) {
-//            latestMissingIndexValue++;
-//        }
     }
 
     private String query(StringBuilder sb, String querystr) throws ParseException, IOException {
@@ -436,27 +449,90 @@ public final class Search extends ComponentDefinition {
             // Pick a node or more, and exchange index with them
         }
     };
-    
+
+    //Garbage Collector of request IDs
+    Handler<GarbageRequestIdTimeout> handleGarbageRequesId = new Handler<GarbageRequestIdTimeout>() {
+        @Override
+        public void handle(GarbageRequestIdTimeout event) {
+            requestIds.remove(event.getRequestId());
+        }
+    };
+
+    //Leader - Receives a message from TMan for adding an entry to the index
+    Handler<AddEntryRequest> handleAddEntryRequest = new Handler<AddEntryRequest>() {
+        @Override
+        public void handle(AddEntryRequest event) {
+            String title = event.getTitle();
+            String magnet = event.getMagnet();
+            int requestID = event.getRequestID();
+
+            //Check if the request ID already exist
+            if (requestIds.contains(requestID))
+                return;
+            requestIds.add(requestID);
+
+
+            //Add the entry to the index
+            System.out.println("Leader "+self.getPeerId()+" adds "+requestID);
+            try {
+                addEntry(title, lastIdWritten+1, magnet);
+            } catch (IOException e) {
+                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+            }
+            lastIdWritten += 1;
+
+            //Start a timer to remove it after 1 min
+            ScheduleTimeout rst = new ScheduleTimeout(60000);
+            rst.setTimeoutEvent(new GarbageRequestIdTimeout(rst, requestID));
+            trigger(rst, timerPort);
+        }
+    };
+
 //-------------------------------------------------------------------	
     Handler<AddIndexText> handleAddIndexText = new Handler<AddIndexText>() {
         @Override
         public void handle(AddIndexText event) {
             Random r = new Random(System.currentTimeMillis());
-            int id = r.nextInt(100000);
+            int requestId = r.nextInt(100000);
 
             /*Generate random magnet link*/
             String magnet = new BigInteger(130, r).toString(32);
 
+            //Trigger Add Request to T-Man
+            System.out.println("peer " + self.getPeerId() + " trying to add " + requestId);
+            trigger(new AddEntryRequest(self, self, self, event.getText(), magnet, requestId), tmanSamplePort);
 
-            logger.info(self.getPeerAddress().getId()
-                    + " - adding index entry: {}-{}-"+magnet, event.getText(), id);
-            try {
-                addEntry(event.getText(), id, magnet);
-            } catch (IOException ex) {
-                java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
-                throw new IllegalArgumentException(ex.getMessage());
+
+            //Start Timer for ACK
+            ScheduleTimeout rst = new ScheduleTimeout(10000);
+            rst.setTimeoutEvent(new AddEntryACKTimeout(rst, requestId, event.getText(), magnet));
+            trigger(rst, timerPort);
+        }
+    };
+
+    //Entry successfully inserted
+   Handler<AddEntryACK> handleAddEntryACK = new Handler<AddEntryACK>() {
+        @Override
+        public void handle(AddEntryACK event) {
+            if (!receivedAcks.contains(event.getRequestID()))
+                receivedAcks.add(event.getRequestID());
+        }
+    };
+
+    //Check if ACK has received
+   Handler<AddEntryACKTimeout> handleAddEntryACKTimer = new Handler<AddEntryACKTimeout>() {
+        @Override
+        public void handle(AddEntryACKTimeout event) {
+            if (receivedAcks.size()>0 && receivedAcks.contains(event.getRequestId())) {
+                receivedAcks.remove((Object) event.getRequestId() );
+            }
+            else  {
+                trigger(new AddEntryRequest(self, self, self, event.getTitle(), event.getMagnet(), event.getRequestId()), tmanSamplePort);
+                //Start Timer for ACK
+                ScheduleTimeout rst = new ScheduleTimeout(10000);
+                rst.setTimeoutEvent(new AddEntryACKTimeout(rst, event.getRequestId(), event.getTitle(), event.getMagnet()));
+                trigger(rst, timerPort);
             }
         }
     };
-    
 }
