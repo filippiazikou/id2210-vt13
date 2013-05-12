@@ -84,6 +84,9 @@ public final class TMan extends ComponentDefinition {
         subscribe(pingOkMessageHandler, networkPort);
         subscribe(isLeaderSuspectedMessageHandler, networkPort);
         subscribe(isLeaderSuspectedResultMessageHandler, networkPort);
+        subscribe(handleAddEntryRequestFromSearch, tmanPartnersPort);
+        subscribe(handleAddEntryRequestFromTman, networkPort);
+        subscribe(handleAddEntryACK, networkPort);
     }
 //-------------------------------------------------------------------	
     Handler<TManInit> handleInit = new Handler<TManInit>() {
@@ -494,4 +497,65 @@ public final class TMan extends ComponentDefinition {
 
         return result;
     }
+
+    //Handle AddIndexRequest triggered from Search Component
+    Handler<AddEntryRequest> handleAddEntryRequestFromSearch = new Handler<AddEntryRequest>() {
+        @Override
+        public void handle(AddEntryRequest event) {
+            addEntryRequest(event);
+        }
+    };
+
+    //Handle AddIndexRequest  triggered from Tman
+    Handler<AddEntryRequest> handleAddEntryRequestFromTman = new Handler<AddEntryRequest>() {
+        @Override
+        public void handle(AddEntryRequest event) {
+            addEntryRequest(event);
+        }
+    };
+
+    void addEntryRequest(AddEntryRequest event) {
+        //get the minimum id if view
+        int min = -1;
+        int minPos=0;
+        for (int i=0 ; i<view.size();i++){
+            if (min == -1)   {
+                min =  view.get(i).getPeerAddress().getPeerAddress().getId();
+                minPos = i;
+            }
+            else if (view.get(i).getPeerAddress().getPeerAddress().getId()<min)  {
+                min =  view.get(i).getPeerAddress().getPeerAddress().getId();
+                minPos = i;
+            }
+        }
+
+        //If I don't know the leader forward the request
+        if (leader !=self && view.size() >0 ){
+            trigger(new AddEntryRequest(self, view.get(minPos).getPeerAddress(), event.getInitiator(), event.getTitle(), event.getMagnet(), event.getRequestID()), networkPort);
+        }
+        //If I am the leader, trigger the request to search component
+        else if (leader == self) {
+            trigger(new AddEntryRequest(self, self, event.getInitiator(), event.getTitle(), event.getMagnet(), event.getRequestID()), tmanPartnersPort);
+            //Send ACK
+            trigger(new AddEntryACK(self, getTheClosestToInitiator(event.getInitiator()).getPeerAddress() ,event.getInitiator(), event.getRequestID()), networkPort);
+        }
+    }
+
+    private PeerDescriptor getTheClosestToInitiator(PeerAddress initiator) {
+        ArrayList<PeerDescriptor> sortedView= view;
+        Collections.sort(sortedView, new RankComparator(initiator));
+        return sortedView.get(0);
+    }
+
+    Handler<AddEntryACK> handleAddEntryACK = new Handler<AddEntryACK>() {
+        @Override
+        public void handle(AddEntryACK event) {
+            if (event.getInitiator() == self) {
+                trigger(new AddEntryACK(self, self, self, event.getRequestID()), tmanPartnersPort);
+            }
+            else {
+                trigger(new AddEntryACK(self, getTheClosestToInitiator(event.getInitiator()).getPeerAddress(), event.getInitiator(), event.getRequestID()), networkPort);
+            }
+        }
+    };
 }

@@ -1,5 +1,6 @@
 package tman.system.peer.tman;
 
+<<<<<<< HEAD
 /**
  * Created with IntelliJ IDEA.
  * User: kazarindn
@@ -7,6 +8,8 @@ package tman.system.peer.tman;
  * Time: 9:35 AM
  */
 
+=======
+>>>>>>> Add Entries to the Leader (missing files)
 import common.peer.PeerAddress;
 import common.peer.PeerMessage;
 
@@ -33,5 +36,9 @@ public class AddEntryACK extends PeerMessage {
     public PeerAddress getInitiator() {
         return initiator;
     }
+<<<<<<< HEAD
 }
 
+=======
+}
+>>>>>>> Add Entries to the Leader (missing files)
