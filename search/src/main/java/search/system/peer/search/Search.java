@@ -109,15 +109,15 @@ public final class Search extends ComponentDefinition {
             trigger(rst, timerPort);
 
             Snapshot.updateNum(self, num);
-            String title = "The Art of Computer Science";
-            int id = 100;
-            String magnet = "a896f7155237fb27e2eaa06033b5796d7ae84a1d";
-            //addEntry(title,id, magnet);
-            trigger(new AddEntryRequest(self, self, self, title, magnet, id), tmanSamplePort);
-            //Start Timer for ACK
-            ScheduleTimeout rst2 = new ScheduleTimeout(10000);
-            rst2.setTimeoutEvent(new AddEntryACKTimeout(rst2, id, title, magnet));
-            trigger(rst2, timerPort);
+//            String title = "The Art of Computer Science";
+//            int id = 100;
+//            String magnet = "a896f7155237fb27e2eaa06033b5796d7ae84a1d";
+//            //addEntry(title,id, magnet);
+//            trigger(new AddEntryRequest(self, self, self, title, magnet, id), tmanSamplePort);
+//            //Start Timer for ACK
+//            ScheduleTimeout rst2 = new ScheduleTimeout(10000);
+//            rst2.setTimeoutEvent(new AddEntryACKTimeout(rst2, id, title, magnet));
+//            trigger(rst2, timerPort);
 
         }
     };
@@ -456,7 +456,8 @@ public final class Search extends ComponentDefinition {
     Handler<GarbageRequestIdTimeout> handleGarbageRequesId = new Handler<GarbageRequestIdTimeout>() {
         @Override
         public void handle(GarbageRequestIdTimeout event) {
-            requestIds.remove(event.getRequestId());
+            if(requestIds.contains(event.getRequestId()))
+                requestIds.remove(event.getRequestId());
         }
     };
 
@@ -501,7 +502,7 @@ public final class Search extends ComponentDefinition {
             String magnet = new BigInteger(130, r).toString(32);
 
             //Trigger Add Request to T-Man
-            System.out.println("peer " + self.getPeerId() + " trying to add " + requestId);
+            //System.out.println("peer " + self.getPeerId() + " trying to add " + requestId);
             trigger(new AddEntryRequest(self, self, self, event.getText(), magnet, requestId), tmanSamplePort);
 
 

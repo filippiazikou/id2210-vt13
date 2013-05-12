@@ -12,10 +12,7 @@ import cyclon.system.peer.cyclon.DescriptorBuffer;
 import cyclon.system.peer.cyclon.PeerDescriptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import se.sics.kompics.ComponentDefinition;
-import se.sics.kompics.Handler;
-import se.sics.kompics.Negative;
-import se.sics.kompics.Positive;
+import se.sics.kompics.*;
 import se.sics.kompics.network.Network;
 import se.sics.kompics.timer.SchedulePeriodicTimeout;
 import se.sics.kompics.timer.ScheduleTimeout;
@@ -40,7 +37,7 @@ public final class TMan extends ComponentDefinition {
     boolean isWaitingForElectionMessage = false;
     private int T = 3000;
     private int cyclesCount = 0;
-    private int cyclesForLeaderTest = 5;
+    private int cyclesForLeaderTest = 10;
     private int c;
     private int m;
     private boolean pingFromLeader = false;
@@ -105,7 +102,6 @@ public final class TMan extends ComponentDefinition {
             ScheduleTimeout pingLeaderTimeout = new ScheduleTimeout(period);
             pingLeaderTimeout.setTimeoutEvent(new PingSchedule(pingLeaderTimeout));
             trigger(pingLeaderTimeout, timerPort);
-
         }
     };
 //-------------------------------------------------------------------
@@ -142,6 +138,7 @@ public final class TMan extends ComponentDefinition {
             isLeaderSuspected = true;
             logger.info(String.format("%s - leader suspected", self.getPeerAddress().getId()));
             requiredAcks = (int)Math.ceil(((double)view.size())/2);
+            logger.info(String.format("Need %s acks", requiredAcks));
             for(int i=0; i<view.size(); i++)
                 trigger(new IsLeaderSuspectedMessage(self, view.get(i).getPeerAddress()), networkPort);
         }
@@ -173,7 +170,7 @@ public final class TMan extends ComponentDefinition {
                 }
             }
 
-            if(toRemove !=null) {
+            if(toRemove != null) {
                 view.remove(toRemove);
                 if(buffer.contains(toRemove)) buffer.remove(toRemove);
             }
@@ -312,22 +309,11 @@ public final class TMan extends ComponentDefinition {
         }
     };
 
+    //Handle coordinator message that announces a leader
     Handler<CoordinatorMessage> coordinatorMessageHandler = new Handler<CoordinatorMessage>() {
         @Override
         public void handle(CoordinatorMessage coordinatorMessage) {
             leader = coordinatorMessage.getPeerSource();
-
-            for(int i=0; i< view.size(); i++) {
-                if(view.get(i).getPeerAddress().getPeerAddress().getId() < leader.getPeerAddress().getId()) {
-                    view.remove(view.get(i));
-                }
-            }
-
-            for(int i=0; i< buffer.size(); i++) {
-                if(buffer.get(i).getPeerAddress().getPeerAddress().getId() < leader.getPeerAddress().getId()) {
-                    buffer.remove(buffer.get(i));
-                }
-            }
 
             logger.info(String.format("%s - Leader: %s", self.getPeerAddress().getId(), leader.getPeerAddress().getId()));
         }
@@ -336,10 +322,17 @@ public final class TMan extends ComponentDefinition {
     private void StartLeaderElection(ArrayList<PeerAddress> additionalPeer) {
         if(leader != null) return;
 
+        logger.info("============= View =============");
+        for(int i=0; i<view.size(); i++) {
+            logger.info(String.format("%s partner - %s", self.getPeerAddress().getId(), view.get(i).getPeerAddress().getPeerAddress().getId()));
+        }
+        logger.info("++++++++++++++++++++++++++++++++++++");
+
         logger.info(String.format("%s - starting leader election", self.getPeerAddress().getId()));
 
         Collections.sort(view, new UtilityRanking());
 
+        //if there is no peer with higher utility then leader = me
         if(view.size() > 0 && view.get(0).getPeerAddress().getPeerAddress().getId() >= self.getPeerAddress().getId()) {
             leaderKnowledge = LeaderKnowledge.I_M_THE_LEADER;
             leader = self;
@@ -351,6 +344,7 @@ public final class TMan extends ComponentDefinition {
             return;
         }
 
+        //send election message to peers with higher utility then mine
         leaderKnowledge = LeaderKnowledge.MAYBE_ME;
         for(int i=0; i<view.size(); i++) {
             if(view.get(i).getPeerAddress().getPeerAddress().getId() >= self.getPeerAddress().getId())
@@ -359,6 +353,7 @@ public final class TMan extends ComponentDefinition {
             trigger(new ElectionMessage(self, view.get(i).getPeerAddress()), networkPort);
         }
 
+        //if this election invoked by a node with lower utility, send an election message to it
         if(additionalPeer != null) {
             for(int i=0; i< additionalPeer.size(); i++) {
                 trigger(new ElectionMessage(self, additionalPeer.get(i)), networkPort);
@@ -371,6 +366,7 @@ public final class TMan extends ComponentDefinition {
         trigger(rst, timerPort);
     }
 
+    //if no ok message from a node with higher utility after timeout, then I'm the leader
     Handler<ElectionMessageTimeout> electionMessageTimeoutHandler = new Handler<ElectionMessageTimeout>() {
         @Override
         public void handle(ElectionMessageTimeout electionMessageTimeout) {
@@ -399,6 +395,7 @@ public final class TMan extends ComponentDefinition {
         }
     };
 
+    //parse ok message from a node with higher utility
     Handler<OkMessage> okMessageHandler = new Handler<OkMessage>() {
         @Override
         public void handle(OkMessage okMessage) {
@@ -413,6 +410,7 @@ public final class TMan extends ComponentDefinition {
         }
     };
 
+    //start election again if failed
     Handler<ElectionMessageWaitingTimeout> electionMessageWaitingTimeoutHandler = new Handler<ElectionMessageWaitingTimeout>() {
         @Override
         public void handle(ElectionMessageWaitingTimeout electionMessageWaitingTimeout) {
