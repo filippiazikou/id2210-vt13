@@ -40,9 +40,7 @@ import se.sics.kompics.web.WebRequest;
 import se.sics.kompics.web.WebResponse;
 import search.system.peer.AddIndexText;
 import search.system.peer.IndexPort;
-import tman.system.peer.tman.AddEntryACK;
 import tman.system.peer.tman.TManSample;
-import tman.system.peer.tman.AddEntryRequest;
 import tman.system.peer.tman.TManSamplePort;
 
 /**
