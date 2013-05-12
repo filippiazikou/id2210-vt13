@@ -1,47 +1,51 @@
 package search.system.peer.search;
 
-import org.apache.lucene.document.*;
-import org.apache.lucene.search.*;
-import se.sics.kompics.timer.ScheduleTimeout;
-import search.simulator.snapshot.Snapshot;
 import common.configuration.SearchConfiguration;
 import common.peer.PeerAddress;
 import cyclon.system.peer.cyclon.CyclonSample;
 import cyclon.system.peer.cyclon.CyclonSamplePort;
-import java.io.IOException;
-import java.math.BigInteger;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Random;
-
-import java.util.logging.Level;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.document.Field;
+import org.apache.lucene.document.IntField;
+import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.queryparser.classic.QueryParser;
+import org.apache.lucene.search.*;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.RAMDirectory;
 import org.apache.lucene.util.Version;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import se.sics.kompics.ComponentDefinition;
 import se.sics.kompics.Handler;
 import se.sics.kompics.Negative;
 import se.sics.kompics.Positive;
 import se.sics.kompics.network.Network;
 import se.sics.kompics.timer.SchedulePeriodicTimeout;
+import se.sics.kompics.timer.ScheduleTimeout;
 import se.sics.kompics.timer.Timer;
 import se.sics.kompics.web.Web;
 import se.sics.kompics.web.WebRequest;
 import se.sics.kompics.web.WebResponse;
+import search.simulator.snapshot.Snapshot;
 import search.system.peer.AddIndexText;
 import search.system.peer.IndexPort;
+import tman.system.peer.tman.AddEntryACK;
+import tman.system.peer.tman.AddEntryRequest;
 import tman.system.peer.tman.TManSample;
 import tman.system.peer.tman.TManSamplePort;
+
+import java.io.IOException;
+import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Random;
+import java.util.logging.Level;
 
 /**
  * Should have some comments here.
