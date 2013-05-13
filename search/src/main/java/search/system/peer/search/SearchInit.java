@@ -9,16 +9,22 @@ public final class SearchInit extends Init {
 	private final PeerAddress peerSelf;
 	private final int num;
 	private final SearchConfiguration configuration;
+    private final int partitionAmount;
 
 //-------------------------------------------------------------------
-	public SearchInit(PeerAddress peerSelf, int num, SearchConfiguration configuration) {
+	public SearchInit(PeerAddress peerSelf, int num, SearchConfiguration configuration, int partitionAmount) {
 		super();
 		this.peerSelf = peerSelf;
 		this.num = num;
 		this.configuration = configuration;
+        this.partitionAmount = partitionAmount;
 	}
 
-//-------------------------------------------------------------------
+    public int getPartitionAmount() {
+        return partitionAmount;
+    }
+
+    //-------------------------------------------------------------------
 	public PeerAddress getSelf() {
 		return this.peerSelf;
 	}

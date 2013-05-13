@@ -44,6 +44,7 @@ import java.io.IOException;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Random;
 import java.util.logging.Level;
 
@@ -76,6 +77,9 @@ public final class Search extends ComponentDefinition {
     private int lastIdWritten = 0;
     ArrayList<Integer> requestIds = new ArrayList<Integer>();
     ArrayList<Integer> receivedAcks = new ArrayList<Integer>();
+    private int modPartition;
+    private int numberOfPartitions;
+    private HashMap<Integer, PeerAddress> otherOverlaysMap = new HashMap<Integer, PeerAddress>();
 
     private int latestMissingIndexValue =0;
     private int garbageIndex = -1;
@@ -100,6 +104,10 @@ public final class Search extends ComponentDefinition {
     Handler<SearchInit> handleInit = new Handler<SearchInit>() {
         public void handle(SearchInit init) {
             self = init.getSelf();
+
+            numberOfPartitions = init.getPartitionAmount();
+            modPartition = self.getPeerAddress().getId() % numberOfPartitions;
+
             num = init.getNum();
             searchConfiguration = init.getConfiguration();
             period = searchConfiguration.getPeriod();
@@ -437,11 +445,27 @@ public final class Search extends ComponentDefinition {
     Handler<CyclonSample> handleCyclonSample = new Handler<CyclonSample>() {
         @Override
         public void handle(CyclonSample event) {
+            ArrayList<PeerAddress> cyclonPartners = event.getSample();
+            cyclonPartners = removePartnersNotFromYourPartiotion(cyclonPartners);
             // receive a new list of neighbours
-            neighbours = event.getSample();
+            neighbours = cyclonPartners;
             // Pick a node or more, and exchange index with them
         }
     };
+
+    private ArrayList<PeerAddress> removePartnersNotFromYourPartiotion(ArrayList<PeerAddress> cyclonPartners) {
+        ArrayList<PeerAddress> result = new ArrayList<PeerAddress>();
+
+        for(int i=0; i<cyclonPartners.size(); i++) {
+            int partnerMod = cyclonPartners.get(i).getPeerAddress().getId() % numberOfPartitions;
+            if(partnerMod == modPartition)
+                result.add(cyclonPartners.get(i));
+            else
+                otherOverlaysMap.put(partnerMod, cyclonPartners.get(i));
+        }
+
+        return result;
+    }
     
     Handler<TManSample> handleTManSample = new Handler<TManSample>() {
         @Override

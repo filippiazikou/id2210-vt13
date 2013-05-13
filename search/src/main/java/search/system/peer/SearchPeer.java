@@ -119,9 +119,10 @@ public final class SearchPeer extends ComponentDefinition {
 //-------------------------------------------------------------------	
 	Handler<JoinCompleted> handleJoinCompleted = new Handler<JoinCompleted>() {
 		public void handle(JoinCompleted event) {
+            int partitionAmount = 5;
 			trigger(new BootstrapCompleted("Cyclon", peerSelf), bootstrap.getPositive(P2pBootstrap.class));
-			trigger(new SearchInit(peerSelf, num, aggregationConfiguration), search.getControl());
-            trigger(new TManInit(peerSelf, new TManConfiguration(1000), 3, 5), tman.getControl());
+			trigger(new SearchInit(peerSelf, num, aggregationConfiguration, partitionAmount), search.getControl());
+            trigger(new TManInit(peerSelf, new TManConfiguration(1000), 3, 5, partitionAmount), tman.getControl());
 		}
 	};
 }

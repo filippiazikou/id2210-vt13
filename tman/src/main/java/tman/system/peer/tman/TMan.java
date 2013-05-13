@@ -44,6 +44,8 @@ public final class TMan extends ComponentDefinition {
     private int requiredAcks = 0;
     private boolean isLeaderSuspected = false;
     private ArrayList<PeerAddress> arrayForGradientLeaders = new ArrayList<PeerAddress>();
+    private int modPartition;
+    private int numberOfPartitions;
 
     private ArrayList<PeerDescriptor> view = new ArrayList<PeerDescriptor>();
     private ArrayList<PeerDescriptor> buffer = new ArrayList<PeerDescriptor>();
@@ -90,6 +92,10 @@ public final class TMan extends ComponentDefinition {
         @Override
         public void handle(TManInit init) {
             self = init.getSelf();
+
+            numberOfPartitions = init.getPartitionAmount();
+            modPartition = self.getPeerAddress().getId() % numberOfPartitions;
+
             tmanConfiguration = init.getConfiguration();
             period = tmanConfiguration.getPeriod();
             c = init.getViewSize();
@@ -220,7 +226,9 @@ public final class TMan extends ComponentDefinition {
     Handler<CyclonSample> handleCyclonSample = new Handler<CyclonSample>() {
         @Override
         public void handle(CyclonSample event) {
-            ArrayList<PeerAddress> cyclonPartners = event.getSample();
+            //ArrayList<PeerAddress> cyclonPartners1 = event.getSample();
+            ArrayList<PeerAddress> cyclonPartners = removePartnersNotFromYourPartiotion(event.getSample());
+
             if(cyclonPartners.size() == 0) return;
 
             PeerDescriptor q = selectPeerFromView();
@@ -241,7 +249,20 @@ public final class TMan extends ComponentDefinition {
             }
         }
     };
-//-------------------------------------------------------------------
+
+    private ArrayList<PeerAddress> removePartnersNotFromYourPartiotion(ArrayList<PeerAddress> cyclonPartners) {
+        ArrayList<PeerAddress> result = new ArrayList<PeerAddress>();
+
+        for(int i=0; i<cyclonPartners.size(); i++) {
+            int partnerMod = cyclonPartners.get(i).getPeerAddress().getId() % numberOfPartitions;
+            if(partnerMod == modPartition)
+                result.add(cyclonPartners.get(i));
+        }
+
+        return result;
+    }
+
+    //-------------------------------------------------------------------
     Handler<ExchangeMsg.Request> handleTManPartnersRequest = new Handler<ExchangeMsg.Request>() {
         @Override
         public void handle(ExchangeMsg.Request event) {
@@ -296,7 +317,7 @@ public final class TMan extends ComponentDefinition {
 
             if(cyclesCount == -1) return;
 
-            if(leader != null || self.getPeerAddress().getId() != 1) {
+            if(leader != null || self.getPeerAddress().getId() > numberOfPartitions) {
                 cyclesCount = -1;
                 return;
             }
