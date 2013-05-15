@@ -42,10 +42,7 @@ import tman.system.peer.tman.TManSamplePort;
 
 import java.io.IOException;
 import java.math.BigInteger;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Random;
+import java.util.*;
 import java.util.logging.Level;
 
 /**
@@ -74,14 +71,16 @@ public final class Search extends ComponentDefinition {
     Directory index = new RAMDirectory();
     IndexWriterConfig config = new IndexWriterConfig(Version.LUCENE_42, analyzer);
 
+    //Add Entries through Leader
     private int lastIdWritten = 0;
     ArrayList<Integer> requestIds = new ArrayList<Integer>();
     ArrayList<Integer> receivedAcks = new ArrayList<Integer>();
+
+    //Partitioning
     private int modPartition;
     private int numberOfPartitions;
     private HashMap<Integer, PeerAddress> otherOverlaysMap = new HashMap<Integer, PeerAddress>();
-
-    private int latestMissingIndexValue =0;
+    private  HashMap<Long, ArrayList<String>> searchResults =  new HashMap<Long, ArrayList<String>>();
     private int garbageIndex = -1;
 
 //-------------------------------------------------------------------	
@@ -99,6 +98,9 @@ public final class Search extends ComponentDefinition {
         subscribe(getUpdatesResponseHandler, networkPort);
         subscribe(handleAddEntryRequest, tmanSamplePort);
         subscribe(handleAddEntryACK, tmanSamplePort);
+        subscribe(handleWebResponseTimeout, timerPort);
+        subscribe(handleSearchRequest, networkPort);
+        subscribe(handleSearchResults, networkPort);
     }
 //-------------------------------------------------------------------	
     Handler<SearchInit> handleInit = new Handler<SearchInit>() {
@@ -115,6 +117,19 @@ public final class Search extends ComponentDefinition {
             SchedulePeriodicTimeout rst = new SchedulePeriodicTimeout(period, period);
             rst.setTimeoutEvent(new UpdateIndexTimeout(rst));
             trigger(rst, timerPort);
+
+            // TODO super ugly workaround...
+            IndexWriter writer;
+            try {
+                writer = new IndexWriter(index, config);
+                writer.commit();
+                writer.close();
+            } catch (IOException e) {
+            // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
+
+
 
             Snapshot.updateNum(self, num);
 //            String title = "The Art of Computer Science";
@@ -144,7 +159,7 @@ public final class Search extends ComponentDefinition {
             int lastExisting = -1;
 
 
-            //Get the missing range less than the first value in the index - check first if peer has index first
+            //Get the missing ranges less than the first value in the index - check first if peer has index
             if (indexStore.size() != 0 && !indexStore.get(i).equals(0)) {
                 lastExisting =  indexStore.get(indexStore.size()-1);
                 Range range = new Range(0,indexStore.get(0)-1);
@@ -329,16 +344,102 @@ public final class Search extends ComponentDefinition {
             logger.debug("Handling Webpage Request");
             WebResponse response;
             if (args[0].compareToIgnoreCase("search") == 0) {
-                response = new WebResponse(searchPageHtml(args[1]), event, 1, 1);
+                //Add to searchResults HashMap the eventId
+                searchResults.put(event.getId(), new ArrayList<String>());
+
+                //trigger event to myself and other overlays given eventId and args[1]
+                trigger(new SearchRequest(self, self, event.getId(), args[1]), networkPort);
+                for (Map.Entry<Integer, PeerAddress> entry : otherOverlaysMap.entrySet()) {
+                    trigger(new SearchRequest(self, entry.getValue(), event.getId(), args[1]), networkPort);
+                }
+
+                //Start WebResponse Timer and parse event and args[1] as parameters
+                ScheduleTimeout rst = new ScheduleTimeout(500);
+                rst.setTimeoutEvent(new WebResponseTimeout(rst, event, args[1]));
+                trigger(rst, timerPort);
+
+                //response = new WebResponse(searchPageHtml(args[1]), event, 1, 1);
             } else if (args[0].compareToIgnoreCase("add") == 0) {
                 response = new WebResponse(addEntryHtml(args[1], Integer.parseInt(args[2]) , args[3]), event, 1, 1);
+                trigger(response, webPort);
             } else {
-                response = new WebResponse(searchPageHtml(event
-                        .getTarget()), event, 1, 1);
+                response = new WebResponse(searchPageHtml(event.getTarget()), event, 1, 1);
+                trigger(response, webPort);
             }
-            trigger(response, webPort);
+
         }
     };
+
+
+    //Handle WebResponseTimeout: get from HashMap the results gathered from Search results, trigger the response and then delete it
+    Handler<WebResponseTimeout> handleWebResponseTimeout = new Handler<WebResponseTimeout>() {
+        @Override
+        public void handle(WebResponseTimeout event) {
+            WebResponse response;
+            String title = event.getQ();
+            StringBuilder sb = new StringBuilder("<!DOCTYPE html PUBLIC \"-//W3C");
+            sb.append("//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR");
+            sb.append("/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http:");
+            sb.append("//www.w3.org/1999/xhtml\"><head><meta http-equiv=\"Conten");
+            sb.append("t-Type\" content=\"text/html; charset=utf-8\" />");
+            sb.append("<title>Kompics P2P Bootstrap Server</title>");
+            sb.append("<style type=\"text/css\"><!--.style2 {font-family: ");
+            sb.append("Arial, Helvetica, sans-serif; color: #0099FF;}--></style>");
+            sb.append("</head><body><h2 align=\"center\" class=\"style2\">");
+            sb.append("ID2210 (Decentralized Search for Piratebay)</h2><br>");
+
+            ArrayList<String> results = new ArrayList<String>();
+            results =  searchResults.get(event.getEvent().getId());
+            sb.append("Found ").append(results.size()).append(" entries.<ul>");
+            for (int i = 0; i < results.size() ; i++) {
+                sb.append("<li>").append(i + 1).append(". ").append(results.get(i)).append("</li>");
+            }
+            sb.append("</ul>");
+
+            searchResults.remove(event.getEvent().getId());
+
+            sb.append("</body></html>");
+
+            //return sb.toString();
+            response = new WebResponse(sb.toString(), event.getEvent(), 1, 1);
+            trigger(response, webPort);
+
+        }
+    };
+
+    //Handle Search Request: search for a query
+    Handler<SearchRequest> handleSearchRequest = new Handler<SearchRequest>() {
+        @Override
+        public void handle(SearchRequest event) {
+            String q = event.getQ();
+            ArrayList<String> result = new ArrayList<String>();
+            try {
+                result = querySearch(q);
+            } catch (ParseException ex) {
+                java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
+                result.add(ex.getMessage());
+            } catch (IOException ex) {
+                java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
+                result.add(ex.getMessage());
+            }
+            trigger(new SearchResults(self, event.getPeerSource(), event.getEventId(), result), networkPort);
+        }
+    };
+
+
+    //Handle Search Results: Add to HashMap
+    Handler<SearchResults> handleSearchResults = new Handler<SearchResults>() {
+        @Override
+        public void handle(SearchResults event) {
+            if (searchResults.containsKey(event.getEventId())) {
+                ArrayList<String> tmp =  searchResults.get(event.getEventId());
+                tmp.addAll(event.getResult());
+                searchResults.remove(event.getEventId());
+                searchResults.put(event.getEventId(), tmp);
+            }
+        }
+    };
+
 
     private String searchPageHtml(String title) {
         StringBuilder sb = new StringBuilder("<!DOCTYPE html PUBLIC \"-//W3C");
@@ -402,9 +503,43 @@ public final class Search extends ComponentDefinition {
         w.addDocument(doc);
         w.close();
 
-        logger.info(String.format("%s Added %s", self.getPeerAddress().getId(), id));
+        logger.info(String.format("%s Added %s %s %s", self.getPeerAddress().getId(), id, title, magnet));
         indexStore.add(id);
         Collections.sort(indexStore);
+    }
+
+    private ArrayList<String> querySearch(String querystr) throws ParseException, IOException {
+        ArrayList<String> results = new ArrayList<String>();
+
+        // the "title" arg specifies the default field to use when no field is explicitly specified in the query.
+        Query q = new QueryParser(Version.LUCENE_42, "title", analyzer).parse(querystr);
+        IndexSearcher searcher = null;
+        IndexReader reader = null;
+        try {
+            reader = DirectoryReader.open(index);
+            searcher = new IndexSearcher(reader);
+        } catch (IOException ex) {
+            java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
+            System.exit(-1);
+        }
+
+        int hitsPerPage = 10;
+        TopScoreDocCollector collector = TopScoreDocCollector.create(hitsPerPage, true);
+
+        searcher.search(q, collector);
+        ScoreDoc[] hits = collector.topDocs().scoreDocs;
+
+        // display results
+        for (int i = 0; i < hits.length; ++i) {
+            int docId = hits[i].doc;
+            Document d = searcher.doc(docId);
+            results.add(d.get("id")+"\t"+d.get("title")+"\t"+d.get("magnet"));
+        }
+
+        // reader can only be closed when there
+        // is no need to access the documents any more.
+        reader.close();
+        return results;
     }
 
     private String query(StringBuilder sb, String querystr) throws ParseException, IOException {
@@ -481,7 +616,7 @@ public final class Search extends ComponentDefinition {
         @Override
         public void handle(GarbageRequestIdTimeout event) {
             if(requestIds.contains(event.getRequestId()))
-                requestIds.remove(event.getRequestId());
+                requestIds.remove((Object) event.getRequestId());
         }
     };
 
