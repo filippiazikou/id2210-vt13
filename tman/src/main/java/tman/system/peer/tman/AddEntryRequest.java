@@ -3,6 +3,8 @@ package tman.system.peer.tman;
 import common.peer.PeerAddress;
 import common.peer.PeerMessage;
 
+import java.util.UUID;
+
 /**
  * Created with IntelliJ IDEA.
  * User: filippia
@@ -13,10 +15,10 @@ import common.peer.PeerMessage;
 public class AddEntryRequest extends PeerMessage {
     private String title;
     private String magnet;
-    private int requestID;
+    private UUID requestID;
     private PeerAddress initiator;
 
-    public AddEntryRequest(PeerAddress source, PeerAddress destination, PeerAddress initiator, String title, String magnet, int requestID) {
+    public AddEntryRequest(PeerAddress source, PeerAddress destination, PeerAddress initiator, String title, String magnet, UUID requestID) {
         super(source, destination);
         this.title = title;
         this.magnet = magnet;
@@ -28,7 +30,7 @@ public class AddEntryRequest extends PeerMessage {
         return magnet;
     }
 
-    public int getRequestID() {
+    public UUID getRequestID() {
         return requestID;
     }
 

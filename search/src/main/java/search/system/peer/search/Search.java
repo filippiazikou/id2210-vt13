@@ -73,8 +73,8 @@ public final class Search extends ComponentDefinition {
 
     //Add Entries through Leader
     private int lastIdWritten = 0;
-    ArrayList<Integer> requestIds = new ArrayList<Integer>();
-    ArrayList<Integer> receivedAcks = new ArrayList<Integer>();
+    ArrayList<UUID> requestIds = new ArrayList<UUID>();
+    ArrayList<UUID> receivedAcks = new ArrayList<UUID>();
 
     //Partitioning
     private int modPartition;
@@ -360,7 +360,7 @@ public final class Search extends ComponentDefinition {
 
                 //response = new WebResponse(searchPageHtml(args[1]), event, 1, 1);
             } else if (args[0].compareToIgnoreCase("add") == 0) {
-                response = new WebResponse(addEntryHtml(args[1], Integer.parseInt(args[2]) , args[3]), event, 1, 1);
+                response = new WebResponse(addEntryHtml(args[1] , args[2]), event, 1, 1);
                 trigger(response, webPort);
             } else {
                 response = new WebResponse(searchPageHtml(event.getTarget()), event, 1, 1);
@@ -465,7 +465,7 @@ public final class Search extends ComponentDefinition {
         return sb.toString();
     }
 
-    private String addEntryHtml(String title, int id, String magnet) {
+    private String addEntryHtml(String title, String magnet) {
         StringBuilder sb = new StringBuilder("<!DOCTYPE html PUBLIC \"-//W3C");
         sb.append("//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR");
         sb.append("/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http:");
@@ -478,12 +478,13 @@ public final class Search extends ComponentDefinition {
         sb.append("ID2210 Uploaded Entry</h2><br>");
 
         // addEntry(title, id, magnet);
-        trigger(new AddEntryRequest(self, self, self, title, magnet, id), tmanSamplePort);
+        UUID requestId = UUID.randomUUID();
+        trigger(new AddEntryRequest(self, self, self, title, magnet, requestId), tmanSamplePort);
         ScheduleTimeout rst = new ScheduleTimeout(10000);
-        rst.setTimeoutEvent(new AddEntryACKTimeout(rst, id, title, magnet));
+        rst.setTimeoutEvent(new AddEntryACKTimeout(rst, requestId, title, magnet));
         trigger(rst, timerPort);
 
-        sb.append("Entry: ").append(title).append(" - ").append(id).append(" - ").append(magnet);
+        sb.append("Entry: ").append(title).append(" - ").append(magnet);
         sb.append("</body></html>");
         return sb.toString();
     }
@@ -626,7 +627,7 @@ public final class Search extends ComponentDefinition {
         public void handle(AddEntryRequest event) {
             String title = event.getTitle();
             String magnet = event.getMagnet();
-            int requestID = event.getRequestID();
+            UUID requestID = event.getRequestID();
 
             //Check if the request ID already exist
             if (requestIds.contains(requestID))
@@ -655,8 +656,7 @@ public final class Search extends ComponentDefinition {
         @Override
         public void handle(AddIndexText event) {
             Random r = new Random(System.currentTimeMillis());
-            int requestId = r.nextInt(100000);
-
+            UUID requestId = UUID.randomUUID() ;
             /*Generate random magnet link*/
             String magnet = new BigInteger(130, r).toString(32);
 

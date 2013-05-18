@@ -3,6 +3,8 @@ package search.system.peer.search;
 import se.sics.kompics.timer.ScheduleTimeout;
 import se.sics.kompics.timer.Timeout;
 
+import java.util.UUID;
+
 /**
  * Created with IntelliJ IDEA.
  * User: filippia
@@ -11,14 +13,14 @@ import se.sics.kompics.timer.Timeout;
  * To change this template use File | Settings | File Templates.
  */
 public class GarbageRequestIdTimeout  extends Timeout  {
-     int requestId;
+     UUID requestId;
     //-------------------------------------------------------------------
-    public GarbageRequestIdTimeout(ScheduleTimeout request, int requestId) {
+    public GarbageRequestIdTimeout(ScheduleTimeout request, UUID requestId) {
         super(request);
         this.requestId = requestId;
     }
 
-    public int getRequestId() {
+    public UUID getRequestId() {
         return requestId;
     }
 }

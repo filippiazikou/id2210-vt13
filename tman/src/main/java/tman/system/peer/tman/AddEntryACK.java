@@ -3,6 +3,8 @@ package tman.system.peer.tman;
 import common.peer.PeerAddress;
 import common.peer.PeerMessage;
 
+import java.util.UUID;
+
 /**
  * Created with IntelliJ IDEA.
  * User: filippia
@@ -11,15 +13,15 @@ import common.peer.PeerMessage;
  * To change this template use File | Settings | File Templates.
  */
 public class AddEntryACK extends PeerMessage {
-    private int requestID;
+    private UUID requestID;
     PeerAddress initiator;
-    public AddEntryACK(PeerAddress source, PeerAddress destination, PeerAddress initiator, int requestID) {
+    public AddEntryACK(PeerAddress source, PeerAddress destination, PeerAddress initiator, UUID requestID) {
         super(source, destination);
         this.requestID = requestID;
         this.initiator = initiator;
     }
 
-    public int getRequestID() {
+    public UUID getRequestID() {
         return requestID;
     }
 
