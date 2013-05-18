@@ -86,6 +86,7 @@ public final class TMan extends ComponentDefinition {
         subscribe(handleAddEntryRequestFromSearch, tmanPartnersPort);
         subscribe(handleAddEntryRequestFromTman, networkPort);
         subscribe(handleAddEntryACK, networkPort);
+        subscribe(handleAddEntryACK, tmanPartnersPort);
     }
 //-------------------------------------------------------------------	
     Handler<TManInit> handleInit = new Handler<TManInit>() {
@@ -555,8 +556,7 @@ public final class TMan extends ComponentDefinition {
         //If I am the leader, trigger the request to search component
         else if (leader == self) {
             trigger(new AddEntryRequest(self, self, event.getInitiator(), event.getTitle(), event.getMagnet(), event.getRequestID()), tmanPartnersPort);
-            //Send ACK
-            trigger(new AddEntryACK(self, getTheClosestToInitiator(event.getInitiator()).getPeerAddress() ,event.getInitiator(), event.getRequestID()), networkPort);
+
         }
     }
 
@@ -570,10 +570,10 @@ public final class TMan extends ComponentDefinition {
         @Override
         public void handle(AddEntryACK event) {
             if (event.getInitiator() == self) {
-                trigger(new AddEntryACK(self, self, self, event.getRequestID()), tmanPartnersPort);
+                trigger(new AddEntryACK(self, self, self, event.getRequestID(), event.getEntryId()), tmanPartnersPort);
             }
             else {
-                trigger(new AddEntryACK(self, getTheClosestToInitiator(event.getInitiator()).getPeerAddress(), event.getInitiator(), event.getRequestID()), networkPort);
+                trigger(new AddEntryACK(self, getTheClosestToInitiator(event.getInitiator()).getPeerAddress(), event.getInitiator(), event.getRequestID(), event.getEntryId()), networkPort);
             }
         }
     };

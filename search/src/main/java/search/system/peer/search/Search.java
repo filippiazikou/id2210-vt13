@@ -73,8 +73,9 @@ public final class Search extends ComponentDefinition {
 
     //Add Entries through Leader
     private int lastIdWritten = 0;
-    ArrayList<UUID> requestIds = new ArrayList<UUID>();
-    ArrayList<UUID> receivedAcks = new ArrayList<UUID>();
+    private ArrayList<UUID> requestIds = new ArrayList<UUID>();
+    private ArrayList<UUID> receivedAcks = new ArrayList<UUID>();
+    private HashMap<UUID, WebRequest> pendingWebResp = new HashMap<UUID, WebRequest>();
 
     //Partitioning
     private int modPartition;
@@ -360,8 +361,7 @@ public final class Search extends ComponentDefinition {
 
                 //response = new WebResponse(searchPageHtml(args[1]), event, 1, 1);
             } else if (args[0].compareToIgnoreCase("add") == 0) {
-                response = new WebResponse(addEntryHtml(args[1] , args[2]), event, 1, 1);
-                trigger(response, webPort);
+                addEntryHtml(args[1] , args[2], event);
             } else {
                 response = new WebResponse(searchPageHtml(event.getTarget()), event, 1, 1);
                 trigger(response, webPort);
@@ -465,28 +465,13 @@ public final class Search extends ComponentDefinition {
         return sb.toString();
     }
 
-    private String addEntryHtml(String title, String magnet) {
-        StringBuilder sb = new StringBuilder("<!DOCTYPE html PUBLIC \"-//W3C");
-        sb.append("//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR");
-        sb.append("/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http:");
-        sb.append("//www.w3.org/1999/xhtml\"><head><meta http-equiv=\"Conten");
-        sb.append("t-Type\" content=\"text/html; charset=utf-8\" />");
-        sb.append("<title>Adding an Entry</title>");
-        sb.append("<style type=\"text/css\"><!--.style2 {font-family: ");
-        sb.append("Arial, Helvetica, sans-serif; color: #0099FF;}--></style>");
-        sb.append("</head><body><h2 align=\"center\" class=\"style2\">");
-        sb.append("ID2210 Uploaded Entry</h2><br>");
-
-        // addEntry(title, id, magnet);
+    private void addEntryHtml(String title, String magnet, WebRequest event) {
         UUID requestId = UUID.randomUUID();
+        pendingWebResp.put(requestId, event);
         trigger(new AddEntryRequest(self, self, self, title, magnet, requestId), tmanSamplePort);
         ScheduleTimeout rst = new ScheduleTimeout(10000);
         rst.setTimeoutEvent(new AddEntryACKTimeout(rst, requestId, title, magnet));
         trigger(rst, timerPort);
-
-        sb.append("Entry: ").append(title).append(" - ").append(magnet);
-        sb.append("</body></html>");
-        return sb.toString();
     }
 
     private void addEntry(String title, int id, String magnet) throws IOException {
@@ -639,6 +624,9 @@ public final class Search extends ComponentDefinition {
             System.out.println("Leader "+self.getPeerId()+" adds "+requestID);
             try {
                 addEntry(title, lastIdWritten+1, magnet);
+                //Send ACK
+                trigger(new AddEntryACK(self, self , event.getInitiator(), event.getRequestID(), lastIdWritten+1), tmanSamplePort);
+
             } catch (IOException e) {
                 e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
             }
@@ -678,6 +666,29 @@ public final class Search extends ComponentDefinition {
         public void handle(AddEntryACK event) {
             if (!receivedAcks.contains(event.getRequestID()))
                 receivedAcks.add(event.getRequestID());
+
+            /*Print out*/
+            if (pendingWebResp.containsKey(event.getRequestID())) {
+                StringBuilder sb = new StringBuilder("<!DOCTYPE html PUBLIC \"-//W3C");
+                sb.append("//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR");
+                sb.append("/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http:");
+                sb.append("//www.w3.org/1999/xhtml\"><head><meta http-equiv=\"Conten");
+                sb.append("t-Type\" content=\"text/html; charset=utf-8\" />");
+                sb.append("<title>Adding an Entry</title>");
+                sb.append("<style type=\"text/css\"><!--.style2 {font-family: ");
+                sb.append("Arial, Helvetica, sans-serif; color: #0099FF;}--></style>");
+                sb.append("</head><body><h2 align=\"center\" class=\"style2\">");
+                sb.append("ID2210 Uploaded Entry</h2><br>");
+
+                String[] args = pendingWebResp.get(event.getRequestID()).getTarget().split("-");
+
+                sb.append("Entry: ").append(event.getEntryId()).append(" - ").append(args[1]).append(" - ").append(args[2]);
+                sb.append("</body></html>");
+                //return sb.toString();
+                WebResponse response = new WebResponse(sb.toString(), pendingWebResp.get(event.getRequestID()), 1, 1);
+                trigger(response, webPort);
+                pendingWebResp.remove(event.getRequestID());
+            }
         }
     };
 

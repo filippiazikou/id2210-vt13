@@ -18,6 +18,7 @@ public class AddEntryRequest extends PeerMessage {
     private UUID requestID;
     private PeerAddress initiator;
 
+
     public AddEntryRequest(PeerAddress source, PeerAddress destination, PeerAddress initiator, String title, String magnet, UUID requestID) {
         super(source, destination);
         this.title = title;

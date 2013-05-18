@@ -2,6 +2,7 @@ package tman.system.peer.tman;
 
 import common.peer.PeerAddress;
 import common.peer.PeerMessage;
+import se.sics.kompics.web.WebRequest;
 
 import java.util.UUID;
 
@@ -15,10 +16,13 @@ import java.util.UUID;
 public class AddEntryACK extends PeerMessage {
     private UUID requestID;
     PeerAddress initiator;
-    public AddEntryACK(PeerAddress source, PeerAddress destination, PeerAddress initiator, UUID requestID) {
+    private Integer entryId;
+
+    public AddEntryACK(PeerAddress source, PeerAddress destination, PeerAddress initiator, UUID requestID, Integer entryId) {
         super(source, destination);
         this.requestID = requestID;
         this.initiator = initiator;
+        this.entryId = entryId;
     }
 
     public UUID getRequestID() {
@@ -27,5 +31,9 @@ public class AddEntryACK extends PeerMessage {
 
     public PeerAddress getInitiator() {
         return initiator;
+    }
+
+    public Integer getEntryId() {
+        return entryId;
     }
 }

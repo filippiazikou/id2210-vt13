@@ -7,4 +7,5 @@ public final class TManSamplePort extends PortType {{
     negative(AddEntryRequest.class);
     positive(AddEntryRequest.class);
     positive(AddEntryACK.class);
+    negative(AddEntryACK.class);
 }}
