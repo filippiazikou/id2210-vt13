@@ -276,17 +276,6 @@ public final class TMan extends ComponentDefinition {
 
             Collections.sort(buffer, new RankComparator(self));
             view = selectView();
-
-             /*Increase age for peers that did not appear to the peers of event and remove if > 50*/
-            int age;
-            for (int i = 0 ; i<buffer.size() ; i++) {
-                if (!event.getRandomBuffer().getDescriptors().contains(buffer.get(i)))  {
-                    age = buffer.get(i).incrementAndGetAge();
-                    if (age > 50)
-                        buffer.remove(i);
-                }
-            }
-
         }
     };
     
@@ -306,12 +295,12 @@ public final class TMan extends ComponentDefinition {
 //            }
 //            logger.info("++++++++++++++++++++++++++++++++++++");
 
-             /*Increase age for peers that did not appear to the peers of event and remove if > 50*/
+             //Increase age for peers that did not appear to the peers of event and remove if > 100
             int age;
             for (int i = 0 ; i<buffer.size() ; i++) {
                 if (!event.getSelectedBuffer().getDescriptors().contains(buffer.get(i)))  {
                     age = buffer.get(i).incrementAndGetAge();
-                    if (age > 50)
+                    if (age > 100)
                         buffer.remove(i);
                 }
             }
@@ -500,19 +489,30 @@ public final class TMan extends ComponentDefinition {
 
         ArrayList<PeerDescriptor> result = new ArrayList<PeerDescriptor>();
 
-        for(int i=0; i<first.size(); i++) {
-            result.add(first.get(i));
-        }
-
-        for(int i=0; i< second.size(); i++) {
+        for(int i=0; i<first.size(); i++){
             boolean found = false;
-            for(int j=0; j<first.size(); j++) {
-                if(second.get(i).getPeerAddress().equals(first.get(j).getPeerAddress())) {
+
+            for(int j=0; j<second.size(); j++){
+                //items with the same Address
+                if(first.get(i).equals(second.get(j))) {
                     found = true;
+
+                    //save item with a smaller age
+                    if(first.get(i).getAge() <= second.get(j).getAge())
+                        result.add(first.get(i));
+                    else
+                        result.add(second.get(j));
+
                     break;
                 }
             }
-            if(!found) result.add(second.get(i));
+
+            if(!found) result.add(first.get(i));
+        }
+
+        for(int i=0; i<second.size(); i++){
+            if(!result.contains(second.get(i)))
+                result.add(second.get(i));
         }
 
         return result;
