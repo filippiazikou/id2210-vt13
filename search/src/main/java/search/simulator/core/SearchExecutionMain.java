@@ -30,6 +30,7 @@ import se.sics.kompics.web.jetty.JettyWebServerInit;
 public final class SearchExecutionMain extends ComponentDefinition {
 
     private static SimulationScenario scenario = SimulationScenario.load(System.getProperty("scenario"));
+    private int partitionAmount = 5;
 
 //-------------------------------------------------------------------	
     public static void main(String[] args) {
@@ -55,7 +56,7 @@ public final class SearchExecutionMain extends ComponentDefinition {
         trigger(new BootstrapServerInit(bootConfiguration), bootstrapServer.getControl());
         trigger(new P2pOrchestratorInit(scenario, new KingLatencyMap()), p2pSimulator.getControl());
         trigger(new SimulatorInit(bootConfiguration, cyclonConfiguration, null,
-                searchConfiguration), simulator.getControl());
+                searchConfiguration, partitionAmount), simulator.getControl());
 
         // connect
         connect(bootstrapServer.getNegative(Network.class), p2pSimulator.getPositive(Network.class), new MessageDestinationFilter(bootConfiguration.getBootstrapServerAddress()));

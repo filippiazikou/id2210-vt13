@@ -12,16 +12,22 @@ public final class SimulatorInit extends Init {
     private final CyclonConfiguration cyclonConfiguration;
     private final TManConfiguration tmanConfiguration;
     private final SearchConfiguration aggregationConfiguration;
+    private final int partitionAmount;
 
 //-------------------------------------------------------------------	
     public SimulatorInit(BootstrapConfiguration bootstrapConfiguration,
             CyclonConfiguration cyclonConfiguration, TManConfiguration tmanConfiguration,
-            SearchConfiguration aggregationConfiguration) {
+            SearchConfiguration aggregationConfiguration, int partitionAmount) {
         super();
         this.bootstrapConfiguration = bootstrapConfiguration;
         this.cyclonConfiguration = cyclonConfiguration;
         this.tmanConfiguration = tmanConfiguration;
         this.aggregationConfiguration = aggregationConfiguration;
+        this.partitionAmount = partitionAmount;
+    }
+
+    public int getPartitionAmount() {
+        return partitionAmount;
     }
 
     public SearchConfiguration getAggregationConfiguration() {

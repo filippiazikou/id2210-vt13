@@ -23,6 +23,7 @@ import se.sics.kompics.timer.Timer;
 
 public final class CyclonExecutionMain extends ComponentDefinition {
 	private static SimulationScenario scenario = SimulationScenario.load(System.getProperty("scenario"));
+    private int partitionAmount = 5;
 
 //-------------------------------------------------------------------	
 	public static void main(String[] args) {
@@ -45,7 +46,7 @@ public final class CyclonExecutionMain extends ComponentDefinition {
 		trigger(new BootstrapServerInit(bootConfiguration), bootstrapServer.getControl());
 		trigger(new P2pOrchestratorInit(scenario, new KingLatencyMap()), p2pSimulator.getControl());
 		trigger(new SimulatorInit(bootConfiguration, cyclonConfiguration, 
-                        null, null), simulator.getControl());
+                        null, null, partitionAmount), simulator.getControl());
                 
             
 

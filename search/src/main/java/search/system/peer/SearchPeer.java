@@ -48,6 +48,7 @@ public final class SearchPeer extends ComponentDefinition {
 	private int bootstrapRequestPeerCount;
 	private boolean bootstrapped;
 	private SearchConfiguration aggregationConfiguration;
+    private int partitionAmount;
 
 //-------------------------------------------------------------------	
 	public SearchPeer() {
@@ -83,6 +84,7 @@ public final class SearchPeer extends ComponentDefinition {
 //-------------------------------------------------------------------	
 	Handler<SearchPeerInit> handleInit = new Handler<SearchPeerInit>() {
 		public void handle(SearchPeerInit init) {
+            partitionAmount = init.getPartitionAmount();
 			num = init.getNum();
 			peerSelf = init.getPeerSelf();
 			self = peerSelf.getPeerAddress();
@@ -119,7 +121,6 @@ public final class SearchPeer extends ComponentDefinition {
 //-------------------------------------------------------------------	
 	Handler<JoinCompleted> handleJoinCompleted = new Handler<JoinCompleted>() {
 		public void handle(JoinCompleted event) {
-            int partitionAmount = 5;
 			trigger(new BootstrapCompleted("Cyclon", peerSelf), bootstrap.getPositive(P2pBootstrap.class));
 			trigger(new SearchInit(peerSelf, num, aggregationConfiguration, partitionAmount), search.getControl());
             trigger(new TManInit(peerSelf, new TManConfiguration(1000), 3, 5, partitionAmount), tman.getControl());

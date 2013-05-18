@@ -621,7 +621,7 @@ public final class Search extends ComponentDefinition {
 
 
             //Add the entry to the index
-            System.out.println("Leader "+self.getPeerId()+" adds "+requestID);
+            logger.info("Leader "+self.getPeerAddress().getId()+" adds "+requestID);
             try {
                 addEntry(title, lastIdWritten+1, magnet);
                 //Send ACK

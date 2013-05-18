@@ -13,18 +13,24 @@ public final class SearchPeerInit extends Init {
 	private final BootstrapConfiguration bootstrapConfiguration;
 	private final CyclonConfiguration cyclonConfiguration;
 	private final SearchConfiguration applicationConfiguration;
+    private final int partitionAmount;
 
 //-------------------------------------------------------------------	
-	public SearchPeerInit(PeerAddress peerSelf, int num, BootstrapConfiguration bootstrapConfiguration, CyclonConfiguration cyclonConfiguration, SearchConfiguration applicationConfiguration) {
+	public SearchPeerInit(PeerAddress peerSelf, int num, BootstrapConfiguration bootstrapConfiguration, CyclonConfiguration cyclonConfiguration, SearchConfiguration applicationConfiguration, int partitionAmount) {
 		super();
 		this.peerSelf = peerSelf;
 		this.num = num;
 		this.bootstrapConfiguration = bootstrapConfiguration;
 		this.cyclonConfiguration = cyclonConfiguration;
 		this.applicationConfiguration = applicationConfiguration;
+        this.partitionAmount = partitionAmount;
 	}
 
-//-------------------------------------------------------------------	
+    public int getPartitionAmount() {
+        return partitionAmount;
+    }
+
+    //-------------------------------------------------------------------
 	public PeerAddress getPeerSelf() {
 		return this.peerSelf;
 	}

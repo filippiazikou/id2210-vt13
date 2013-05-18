@@ -50,6 +50,7 @@ public final class SearchSimulator extends ComponentDefinition {
     private Long identifierSpaceSize;
     private ConsistentHashtable<Long> ringNodes;
     private AsIpGenerator ipGenerator = AsIpGenerator.getInstance(125);
+    private int partitionAmount;
 
     static String[] articles = {" ", "The ", "A "};
     static String[] verbs = {"fires ", "walks ", "talks ", "types ", "programs "};
@@ -76,6 +77,7 @@ public final class SearchSimulator extends ComponentDefinition {
             peers.clear();
             peerIdSequence = 0;
 
+            partitionAmount = init.getPartitionAmount();
             bootstrapConfiguration = init.getBootstrapConfiguration();
             cyclonConfiguration = init.getCyclonConfiguration();
             searchConfiguration = init.getAggregationConfiguration();
@@ -165,7 +167,7 @@ public final class SearchSimulator extends ComponentDefinition {
         connect(timer, peer.getNegative(Timer.class));
         connect(peer.getPositive(Web.class), webIncoming); //, new WebDestinationFilter(peerId));
 
-        trigger(new SearchPeerInit(peerAddress, num, bootstrapConfiguration, cyclonConfiguration, searchConfiguration), peer.getControl());
+        trigger(new SearchPeerInit(peerAddress, num, bootstrapConfiguration, cyclonConfiguration, searchConfiguration, partitionAmount), peer.getControl());
 
         trigger(new Start(), peer.getControl());
         peers.put(id, peer);
