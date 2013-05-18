@@ -30,7 +30,7 @@ import se.sics.kompics.web.jetty.JettyWebServerInit;
 public final class SearchExecutionMain extends ComponentDefinition {
 
     private static SimulationScenario scenario = SimulationScenario.load(System.getProperty("scenario"));
-    private int partitionAmount = 5;
+    private int partitionAmount = 1;
 
 //-------------------------------------------------------------------	
     public static void main(String[] args) {

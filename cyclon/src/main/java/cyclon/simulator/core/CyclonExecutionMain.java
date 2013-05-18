@@ -23,7 +23,7 @@ import se.sics.kompics.timer.Timer;
 
 public final class CyclonExecutionMain extends ComponentDefinition {
 	private static SimulationScenario scenario = SimulationScenario.load(System.getProperty("scenario"));
-    private int partitionAmount = 5;
+    private int partitionAmount = 1;
 
 //-------------------------------------------------------------------	
 	public static void main(String[] args) {

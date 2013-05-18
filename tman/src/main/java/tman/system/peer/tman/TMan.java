@@ -37,7 +37,7 @@ public final class TMan extends ComponentDefinition {
     boolean isWaitingForElectionMessage = false;
     private int T = 3000;
     private int cyclesCount = 0;
-    private int cyclesForLeaderTest = 10;
+    private int cyclesForLeaderTest = 5;
     private int c;
     private int m;
     private boolean pingFromLeader = false;
@@ -145,7 +145,12 @@ public final class TMan extends ComponentDefinition {
             isLeaderSuspected = true;
             logger.info(String.format("%s - leader suspected", self.getPeerAddress().getId()));
             requiredAcks = (int)Math.ceil(((double)view.size())/2);
-            logger.info(String.format("Need %s acks", requiredAcks));
+        logger.info("============= View =============");
+        for(int i=0; i<view.size(); i++) {
+            logger.info(String.format("%s partner - %s age %s", self.getPeerAddress().getId(), view.get(i).getPeerAddress().getPeerAddress().getId(), view.get(i).getAge()));
+        }
+        logger.info("++++++++++++++++++++++++++++++++++++");
+        logger.info(String.format("Need %s acks", requiredAcks));
             for(int i=0; i<view.size(); i++)
                 trigger(new IsLeaderSuspectedMessage(self, view.get(i).getPeerAddress()), networkPort);
         }
@@ -333,9 +338,15 @@ public final class TMan extends ComponentDefinition {
     private void StartLeaderElection(ArrayList<PeerAddress> additionalPeer) {
         if(leader != null) return;
 
+        if(leader == self) {
+            for(PeerAddress peer : additionalPeer)
+                trigger(new ElectionMessage(self, peer), networkPort);
+            return;
+        }
+
         logger.info("============= View =============");
         for(int i=0; i<view.size(); i++) {
-            logger.info(String.format("%s partner - %s", self.getPeerAddress().getId(), view.get(i).getPeerAddress().getPeerAddress().getId()));
+            logger.info(String.format("%s partner - %s age %s", self.getPeerAddress().getId(), view.get(i).getPeerAddress().getPeerAddress().getId(), view.get(i).getAge()));
         }
         logger.info("++++++++++++++++++++++++++++++++++++");
 
