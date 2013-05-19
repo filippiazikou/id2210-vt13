@@ -100,7 +100,7 @@ public final class CyclonSimulator extends ComponentDefinition {
 //-------------------------------------------------------------------	
     Handler<PeerFail> handlePeerFail = new Handler<PeerFail>() {
         public void handle(PeerFail event) {
-            Long id = cyclonView.getNode(event.getCyclonId());
+            Long id = cyclonView.getNode(event.getId());
 
             if (cyclonView.size() == 0) {
                 System.err.println("Empty network");

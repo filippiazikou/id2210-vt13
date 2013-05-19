@@ -1,10 +1,10 @@
 package common.simulation;
 
-import java.math.BigInteger;
+import java.io.Serializable;
 
 import se.sics.kompics.Event;
 
-public final class PeerJoin extends Event {
+public final class PeerJoin extends Event implements Serializable{
 
 	private final Long peerId;
 	private final int num;

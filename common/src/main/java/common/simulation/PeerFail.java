@@ -1,20 +1,20 @@
 package common.simulation;
 
-import java.math.BigInteger;
-
 import se.sics.kompics.Event;
 
-public final class PeerFail extends Event {
+import java.io.Serializable;
 
-	private final Long cyclonId;
+public final class PeerFail extends Event implements Serializable {
+
+	private final Long id;
 
 //-------------------------------------------------------------------	
-	public PeerFail(Long cyclonId) {
-		this.cyclonId = cyclonId;
+	public PeerFail(Long id) {
+		this.id = id;
 	}
 
 //-------------------------------------------------------------------	
-	public Long getCyclonId() {
-		return cyclonId;
-	}
+    public Long getId() {
+        return id;
+    }
 }

@@ -31,7 +31,7 @@ public class Configuration {
 	BootstrapConfiguration bootConfiguration = new BootstrapConfiguration(bootServerAddress, 60000, 4000, 3, 30000, webPort, webPort);
 	CyclonConfiguration cyclonConfiguration = new CyclonConfiguration(5, 10, 1000, 500000, (long) (Integer.MAX_VALUE - Integer.MIN_VALUE), 20);
 	TManConfiguration tmanConfiguration = new TManConfiguration(1000);
-	SearchConfiguration aggregationConfiguration = new SearchConfiguration(1000);
+	SearchConfiguration aggregationConfiguration = new SearchConfiguration();
         
 	public void set() throws IOException {
 		String c = File.createTempFile("bootstrap.", ".conf").getAbsolutePath();

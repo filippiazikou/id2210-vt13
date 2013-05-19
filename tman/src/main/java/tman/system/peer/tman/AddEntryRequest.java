@@ -2,6 +2,7 @@ package tman.system.peer.tman;
 
 import common.peer.PeerAddress;
 import common.peer.PeerMessage;
+import se.sics.kompics.address.Address;
 
 import java.util.UUID;
 

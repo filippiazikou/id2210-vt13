@@ -111,7 +111,7 @@ public final class CyclonConfiguration {
 		int randomViewSize = Integer.parseInt(p.getProperty("random.view.size"));
 		long shufflePeriod = Long.parseLong(p.getProperty("shuffle.period"));
 		long shuffleTimeout = Long.parseLong(p.getProperty("shuffle.timeout"));
-		Long identifierSpaceSize = new Long(p.getProperty("id.space.size"));
+		Long identifierSpaceSize = Long.parseLong(p.getProperty("id.space.size"));
 		int bootstrapRequestPeerCount = Integer.parseInt(p.getProperty("bootstrap.request.peer.count"));
 
 		return new CyclonConfiguration(shuffleLength, randomViewSize, shufflePeriod, shuffleTimeout, identifierSpaceSize, bootstrapRequestPeerCount);

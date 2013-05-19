@@ -137,7 +137,7 @@ public final class SearchSimulator extends ComponentDefinition {
 //-------------------------------------------------------------------	
     Handler<PeerFail> handlePeerFail = new Handler<PeerFail>() {
         public void handle(PeerFail event) {
-            Long id = ringNodes.getNode(event.getCyclonId());
+            Long id = ringNodes.getNode(event.getId());
 
             if (ringNodes.size() == 0) {
                 System.err.println("Empty network");
