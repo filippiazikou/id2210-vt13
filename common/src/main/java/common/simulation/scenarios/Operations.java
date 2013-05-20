@@ -1,9 +1,7 @@
 package common.simulation.scenarios;
 
-import common.simulation.AddIndexEntry;
-import common.simulation.PeerFail;
-import common.simulation.PeerJoin;
-import common.simulation.Publish;
+import common.simulation.*;
+
 import java.math.BigInteger;
 import se.sics.kompics.p2p.experiment.dsl.adaptor.Operation;
 import se.sics.kompics.p2p.experiment.dsl.adaptor.Operation1;
@@ -28,7 +26,16 @@ public class Operations {
 		};
 	}
 
-//-------------------------------------------------------------------
+
+    public static Operation1<PeerFailLeader, Long> peerFailLeader = new Operation1<PeerFailLeader, Long>() {
+        public PeerFailLeader generate(Long id) {
+            return new PeerFailLeader(id);
+        }
+    };
+
+
+
+    //-------------------------------------------------------------------
 	public static Operation1<PeerFail, Long> peerFail = new Operation1<PeerFail, Long>() {
 		public PeerFail generate(Long id) {
 			return new PeerFail(id);

@@ -489,6 +489,8 @@ public final class Search extends ComponentDefinition {
         w.addDocument(doc);
         w.close();
 
+        lastIdWritten+=1;
+
         logger.info(String.format("%s Added %s %s %s", self.getPeerAddress().getId(), id, title, magnet));
         indexStore.add(id);
         Collections.sort(indexStore);
@@ -621,16 +623,16 @@ public final class Search extends ComponentDefinition {
 
 
             //Add the entry to the index
-            logger.info("Leader "+self.getPeerAddress().getId()+" adds "+requestID);
+            logger.info("Leader "+self.getPeerAddress().getId()+" adds the request ID: "+requestID);
             try {
                 addEntry(title, lastIdWritten+1, magnet);
                 //Send ACK
-                trigger(new AddEntryACK(self, self , event.getInitiator(), event.getRequestID(), lastIdWritten+1), tmanSamplePort);
+                trigger(new AddEntryACK(self, self , event.getInitiator(), event.getRequestID(), lastIdWritten), tmanSamplePort);
 
             } catch (IOException e) {
                 e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
             }
-            lastIdWritten += 1;
+            //lastIdWritten += 1;
 
             //Start a timer to remove it after 1 min
             ScheduleTimeout rst = new ScheduleTimeout(60000);
@@ -667,6 +669,7 @@ public final class Search extends ComponentDefinition {
             if (!receivedAcks.contains(event.getRequestID()))
                 receivedAcks.add(event.getRequestID());
 
+
             /*Print out*/
             if (pendingWebResp.containsKey(event.getRequestID())) {
                 StringBuilder sb = new StringBuilder("<!DOCTYPE html PUBLIC \"-//W3C");
@@ -681,6 +684,14 @@ public final class Search extends ComponentDefinition {
                 sb.append("ID2210 Uploaded Entry</h2><br>");
 
                 String[] args = pendingWebResp.get(event.getRequestID()).getTarget().split("-");
+
+                /*Add it to the index*/
+                try {
+                    addEntry(args[1], event.getEntryId(), args[2]);
+                } catch (IOException e) {
+                    e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+                }
+
 
                 sb.append("Entry: ").append(event.getEntryId()).append(" - ").append(args[1]).append(" - ").append(args[2]);
                 sb.append("</body></html>");

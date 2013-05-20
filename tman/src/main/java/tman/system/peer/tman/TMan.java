@@ -114,11 +114,11 @@ public final class TMan extends ComponentDefinition {
             trigger(pingLeaderTimeout, timerPort);
 
 
-            if(self.getPeerAddress().getId() == 1) {
+           /* if(self.getPeerAddress().getId() == 1) {
                 ScheduleTimeout dieTimeout = new ScheduleTimeout(12000);
                 dieTimeout.setTimeoutEvent(new DieEvent(dieTimeout));
                 trigger(dieTimeout, timerPort);
-            }
+            } */
         }
     };
 
@@ -147,14 +147,15 @@ public final class TMan extends ComponentDefinition {
             trigger(new PingMessage(self, leader), networkPort);
             trigger(pingResponseTimeout, timerPort);
 
-            logger.info(String.format("%s ping to %s", self.getPeerAddress().getId(), leader.getPeerAddress().getId()));
+          //  logger.info(String.format("%s ping to %s", self.getPeerAddress().getId(), leader.getPeerAddress().getId()));
         }
     };
 
     Handler<PingResponseSchedule> pingResponseScheduleHandler = new Handler<PingResponseSchedule>() {
     @Override
     public void handle(PingResponseSchedule pingResponseSchedule) {
-            if(pingFromLeader) {
+        //if (leader == null) return;
+            if(pingFromLeader && leader!=null) {
                 ScheduleTimeout pingResponseTimeout = new ScheduleTimeout(T);
                 pingResponseTimeout.setTimeoutEvent(new PingResponseSchedule(pingResponseTimeout));
                 pingFromLeader = false;
@@ -382,7 +383,9 @@ public final class TMan extends ComponentDefinition {
             for(int i=0; i<view.size(); i++)
                 if(view.get(i).getPeerAddress().equals(leader.getPeerAddress()))
                     view.remove(i);
-
+            for(int i=0; i<buffer.size(); i++)
+                if(buffer.get(i).getPeerAddress().equals(leader.getPeerAddress()))
+                    buffer.remove(i);
             leader = null;
         }
 
@@ -602,7 +605,7 @@ public final class TMan extends ComponentDefinition {
     };
 
     void addEntryRequest(AddEntryRequest event) {
-        //get the minimum id if view
+        //get the minimum id of view
         int min = -1;
         int minPos=0;
         for (int i=0 ; i<view.size();i++){

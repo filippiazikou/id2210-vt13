@@ -28,6 +28,7 @@ import common.configuration.Configuration;
 import common.configuration.CyclonConfiguration;
 
 import java.net.InetAddress;
+import java.util.Map;
 import java.util.Random;
 import se.sics.ipasdistances.AsIpGenerator;
 import se.sics.kompics.Negative;
@@ -121,7 +122,6 @@ public final class SearchSimulator extends ComponentDefinition {
         public void handle(PeerJoin event) {
             int num = event.getNum();
             Long id = event.getPeerId();
-
             // join with the next id if this id is taken
             Long successor = ringNodes.getNode(id);
 
@@ -137,17 +137,82 @@ public final class SearchSimulator extends ComponentDefinition {
 //-------------------------------------------------------------------	
     Handler<PeerFail> handlePeerFail = new Handler<PeerFail>() {
         public void handle(PeerFail event) {
-            Long id = ringNodes.getNode(event.getId());
-
+    /*        Long id = ringNodes.getNode(event.getId());
+            //System.out.println("~~~~ "+ peersAddress.get(id).getPeerAddress().getId());
             if (ringNodes.size() == 0) {
                 System.err.println("Empty network");
                 return;
             }
 
             ringNodes.removeNode(id);
+            stopAndDestroyPeer(id);    */
+
+            if (ringNodes.size() == 0) {
+                System.err.println("Empty network");
+                return;
+            }
+
+            //Long id = ringNodes.getNode(event.getId());
+            int i=0;
+            int min = 0;
+            Long id = null;
+            //Find the Leader
+            for (Map.Entry<Long, PeerAddress> entry : peersAddress.entrySet()) {
+                if (i == 0) {
+                    min = entry.getValue().getPeerAddress().getId();
+                    id = entry.getKey();
+                    i++;
+                }
+                else if (entry.getValue().getPeerAddress().getId() < min)  {
+                    min =  entry.getValue().getPeerAddress().getId();
+                    id = entry.getKey();
+                }
+            }
+
+            System.out.println("~~~~ Leader Kill: "+ id + " with id "+min);
+
+            ringNodes.removeNode(id);
+            stopAndDestroyPeer(id);
+
+
+
+
+
+        }
+    };
+
+    Handler<PeerFailLeader> handlePeerFailLeader = new Handler<PeerFailLeader>() {
+        public void handle(PeerFailLeader event) {
+
+            if (ringNodes.size() == 0) {
+                System.err.println("Empty network");
+                return;
+            }
+
+            //Long id = ringNodes.getNode(event.getId());
+            int i=0;
+            int min = 0;
+            Long id = null;
+            //Find the Leader
+            for (Map.Entry<Long, PeerAddress> entry : peersAddress.entrySet()) {
+                if (i == 0) {
+                    min = entry.getValue().getPeerAddress().getId();
+                    id = entry.getKey();
+                    i++;
+                }
+                else if (entry.getValue().getPeerAddress().getId() < min)  {
+                    min =  entry.getValue().getPeerAddress().getId();
+                    id = entry.getKey();
+                }
+            }
+
+            System.out.println("~~~~ Leader Kill: "+ id + " with id "+min);
+
+            ringNodes.removeNode(id);
             stopAndDestroyPeer(id);
         }
     };
+
 //-------------------------------------------------------------------	
     Handler<GenerateReport> handleGenerateReport = new Handler<GenerateReport>() {
         public void handle(GenerateReport event) {
