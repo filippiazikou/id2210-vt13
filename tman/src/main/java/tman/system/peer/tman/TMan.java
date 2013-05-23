@@ -52,6 +52,7 @@ public final class TMan extends ComponentDefinition {
     private ArrayList<PeerDescriptor> view = new ArrayList<PeerDescriptor>();
     private ArrayList<PeerDescriptor> buffer = new ArrayList<PeerDescriptor>();
     private ArrayList<PeerDescriptor> oldView = new ArrayList<PeerDescriptor>();
+    private ArrayList<PeerDescriptor> pingingMe =new ArrayList<PeerDescriptor>();
     Random rnd = new Random();
 
     public class TManSchedule extends Timeout {
@@ -196,6 +197,16 @@ public final class TMan extends ComponentDefinition {
             buffer = merge(event.getSelectedBuffer().getDescriptors(), view);
             Collections.sort(buffer, new RankComparator(self));
             view = selectView();
+
+            //if peers in view are leaving, we need to keep pinging the leader from new peers
+            if(leader != null && leader.equals(self)) {
+                for(int i=0; i<view.size(); i++) {
+                    if(!view.get(i).getPeerAddress().getPeerAddress().equals(self) && !pingingMe.contains(view.get(i))){
+                        trigger(new CoordinatorMessage(self, view.get(i).getPeerAddress()), networkPort);
+                        pingingMe.add(view.get(i));
+                    }
+                }
+            }
 
 //            logger.info("============= View =============");
 //            for(int i=0; i<view.size(); i++) {
@@ -480,6 +491,7 @@ public final class TMan extends ComponentDefinition {
             for(int i=0; i < view.size(); i++) {
                 trigger(new CoordinatorMessage(self, view.get(i).getPeerAddress()), networkPort);
             }
+            pingingMe = view;
             return;
         }
 
@@ -531,6 +543,7 @@ public final class TMan extends ComponentDefinition {
                 for(int i=0; i < view.size(); i++)
                     trigger(new CoordinatorMessage(self, view.get(i).getPeerAddress()), networkPort);
 
+                pingingMe = view;
                 isLeaderElectionRunning = false;
                 return;
             }
