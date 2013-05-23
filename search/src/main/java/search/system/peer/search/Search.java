@@ -323,10 +323,6 @@ public final class Search extends ComponentDefinition {
         return new BasicTorrentData(Integer.parseInt(d.get("id")), d.get("title"), d.get("magnet"));
     }
 
-    private boolean isInRange(int value, Range range) {
-        return range.getLeft() <= value && value <= range.getRight();
-    }
-
     private void garbageCollection() {
         while (indexStore.contains(garbageIndex+1)) {
             indexStore.remove(garbageIndex+1);
@@ -687,7 +683,8 @@ public final class Search extends ComponentDefinition {
 
                 /*Add it to the index*/
                 try {
-                    addEntry(args[1], event.getEntryId(), args[2]);
+                    if(!indexStore.contains(event.getEntryId()))
+                        addEntry(args[1], event.getEntryId(), args[2]);
                 } catch (IOException e) {
                     e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
                 }

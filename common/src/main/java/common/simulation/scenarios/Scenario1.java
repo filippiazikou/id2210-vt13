@@ -29,6 +29,7 @@ public class Scenario1 extends Scenario {
                 }
             };
 
+            //this will kill the leader as we changed peerFail to enforce it
             StochasticProcess process4 = new StochasticProcess() {
                 {
                     eventInterArrivalTime(constant(100));
