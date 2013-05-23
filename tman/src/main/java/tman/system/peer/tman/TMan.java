@@ -38,8 +38,8 @@ public final class TMan extends ComponentDefinition {
     private int T = 1000;
     private int cyclesCount = 0;
     private int cyclesForLeaderTest = 5;
-    private int c;
-    private int m;
+    private int viewSize;
+    private int sampleZise;
     private boolean pingFromLeader = false;
     private int requiredAcks = 0;
     private boolean isLeaderSuspected = false;
@@ -59,13 +59,12 @@ public final class TMan extends ComponentDefinition {
             super(request);
         }
 
-//-------------------------------------------------------------------
         public TManSchedule(ScheduleTimeout request) {
             super(request);
         }
     }
 
-//-------------------------------------------------------------------	
+    //-------------------------------------------------------------------
     public TMan() {
         tmanPartners = new ArrayList<PeerAddress>();
 
@@ -89,9 +88,8 @@ public final class TMan extends ComponentDefinition {
         subscribe(handleAddEntryRequestFromTman, networkPort);
         subscribe(handleAddEntryACK, networkPort);
         subscribe(handleAddEntryACK, tmanPartnersPort);
-        subscribe(dieEventHandler, timerPort);
     }
-//-------------------------------------------------------------------	
+    //-------------------------------------------------------------------
     Handler<TManInit> handleInit = new Handler<TManInit>() {
         @Override
         public void handle(TManInit init) {
@@ -102,8 +100,8 @@ public final class TMan extends ComponentDefinition {
 
             tmanConfiguration = init.getConfiguration();
             period = tmanConfiguration.getPeriod();
-            c = init.getViewSize();
-            m = init.getExcahngeSampleSize();
+            viewSize = init.getViewSize();
+            sampleZise = init.getExcahngeSampleSize();
 
             SchedulePeriodicTimeout rst = new SchedulePeriodicTimeout(period, period);
             rst.setTimeoutEvent(new TManSchedule(rst));
@@ -112,66 +110,270 @@ public final class TMan extends ComponentDefinition {
             ScheduleTimeout pingLeaderTimeout = new ScheduleTimeout(period);
             pingLeaderTimeout.setTimeoutEvent(new PingSchedule(pingLeaderTimeout));
             trigger(pingLeaderTimeout, timerPort);
-
-
-           /* if(self.getPeerAddress().getId() == 1) {
-                ScheduleTimeout dieTimeout = new ScheduleTimeout(12000);
-                dieTimeout.setTimeoutEvent(new DieEvent(dieTimeout));
-                trigger(dieTimeout, timerPort);
-            } */
         }
     };
 
-    Handler<DieEvent> dieEventHandler = new Handler<DieEvent>() {
+    //------------------------ Gradient -----------------------------
+
+    Handler<TManSchedule> handleRound = new Handler<TManSchedule>() {
         @Override
-        public void handle(DieEvent dieEvent) {
-            trigger(new Stop(), control);
+        public void handle(TManSchedule event) {
+            tmanPartners = getPartners();
+            Snapshot.updateTManPartners(self, tmanPartners);
+
+            // Publish sample to connected components
+            trigger(new TManSample(tmanPartners), tmanPartnersPort);
         }
     };
-//-------------------------------------------------------------------
-    Handler<PingSchedule> pingScheduleHandler = new Handler<PingSchedule>() {
-    @Override
-    public void handle(PingSchedule pingSchedule) {
-            if(leader == null) {
-                ScheduleTimeout pingLeaderTimeout = new ScheduleTimeout(period);
-                pingLeaderTimeout.setTimeoutEvent(new PingSchedule(pingLeaderTimeout));
-                trigger(pingLeaderTimeout, timerPort);
+
+    private ArrayList<PeerAddress> getPartners() {
+        ArrayList<PeerAddress> result = new ArrayList<PeerAddress>();
+
+        for(int i=0; i<view.size(); i++)
+            result.add(view.get(i).getPeerAddress());
+
+        return result;
+    }
+
+    Handler<CyclonSample> handleCyclonSample = new Handler<CyclonSample>() {
+        @Override
+        public void handle(CyclonSample event) {
+            //ArrayList<PeerAddress> cyclonPartners1 = event.getSample();
+            ArrayList<PeerAddress> cyclonPartners = removePartnersNotFromYourPartiotion(event.getSample());
+
+            if(cyclonPartners.size() == 0) return;
+
+            PeerDescriptor q = selectPeerFromView();
+            buffer = merge(view, new ArrayList<PeerDescriptor>(){{new PeerDescriptor(self);}});
+
+            PeerAddress rndPeer = cyclonPartners.get(rnd.nextInt(cyclonPartners.size()));
+            ArrayList<PeerDescriptor> myDescriptor = new ArrayList<PeerDescriptor>();
+            myDescriptor.add(new PeerDescriptor(rndPeer));
+            //merge buffer with self
+            buffer = merge(buffer, myDescriptor);
+
+            if(q == null) {
+                Collections.sort(buffer, new RankComparator(rndPeer));
+                trigger(new ExchangeMsg.Request(UUID.randomUUID(), new DescriptorBuffer(self, takeM(buffer)), self, rndPeer), networkPort);
+            }
+            else {
+                Collections.sort(buffer, new RankComparator(q.getPeerAddress()));
+                trigger(new ExchangeMsg.Request(UUID.randomUUID(), new DescriptorBuffer(self, takeM(buffer)), self, q.getPeerAddress()), networkPort);
+            }
+        }
+    };
+
+    private ArrayList<PeerAddress> removePartnersNotFromYourPartiotion(ArrayList<PeerAddress> cyclonPartners) {
+        ArrayList<PeerAddress> result = new ArrayList<PeerAddress>();
+
+        for(int i=0; i<cyclonPartners.size(); i++) {
+            int partnerMod = cyclonPartners.get(i).getPeerAddress().getId() % numberOfPartitions;
+            if(partnerMod == modPartition)
+                result.add(cyclonPartners.get(i));
+        }
+
+        return result;
+    }
+
+    Handler<ExchangeMsg.Request> handleTManPartnersRequest = new Handler<ExchangeMsg.Request>() {
+        @Override
+        public void handle(ExchangeMsg.Request event) {
+            buffer = merge(view, new ArrayList<PeerDescriptor>(){{new PeerDescriptor(self);}});
+            Collections.sort(buffer, new RankComparator(event.getPeerSource()));
+            //send to the peer his closest neighbours
+            trigger(new ExchangeMsg.Response(UUID.randomUUID(), new DescriptorBuffer(self, takeM(buffer)), self, event.getPeerSource()), networkPort);
+            buffer = merge(event.getRandomBuffer().getDescriptors(), view);
+
+            Collections.sort(buffer, new RankComparator(self));
+            view = selectView();
+        }
+    };
+
+    Handler<ExchangeMsg.Response> handleTManPartnersResponse = new Handler<ExchangeMsg.Response>() {
+        @Override
+        public void handle(ExchangeMsg.Response event) {
+            buffer = merge(event.getSelectedBuffer().getDescriptors(), view);
+            Collections.sort(buffer, new RankComparator(self));
+            view = selectView();
+
+//            logger.info("============= View =============");
+//            for(int i=0; i<view.size(); i++) {
+//                logger.info(String.format("%s partner - %s", self.getPeerAddress().getId(), view.get(i).getPeerAddress().getPeerAddress().getId()));
+//            }
+//            logger.info("++++++++++++++++++++++++++++++++++++");
+
+            //Increase age for peers that did not appear to the peers of event and remove if > 100
+            int age;
+            for (int i = 0 ; i<buffer.size() ; i++) {
+                if (!event.getSelectedBuffer().getDescriptors().contains(buffer.get(i)))  {
+                    age = buffer.get(i).incrementAndGetAge();
+                    if (age > 100)
+                        buffer.remove(i);
+                }
+            }
+
+            if(cyclesCount == -1) return;
+
+            if(leader != null || self.getPeerAddress().getId() > numberOfPartitions) {
+                cyclesCount = -1;
                 return;
             }
 
-            if(leader.equals(self)) return;
+            cyclesCount++;
+            if(cyclesCount != cyclesForLeaderTest) return;
 
-            ScheduleTimeout pingResponseTimeout = new ScheduleTimeout(T);
-            pingResponseTimeout.setTimeoutEvent(new PingResponseSchedule(pingResponseTimeout));
-            pingFromLeader = false;
-            trigger(new PingMessage(self, leader), networkPort);
-            trigger(pingResponseTimeout, timerPort);
+            cyclesCount = -1;
+            StartLeaderElection(null);
+        }
+    };
 
-          //  logger.info(String.format("%s ping to %s", self.getPeerAddress().getId(), leader.getPeerAddress().getId()));
+    private ArrayList<PeerDescriptor> takeM(ArrayList<PeerDescriptor> buffer) {
+        if(buffer.size() <= sampleZise)
+            return buffer;
+
+        ArrayList<PeerDescriptor> result = new ArrayList<PeerDescriptor>();
+        for(int i=0; i< sampleZise; i++)
+            result.add(buffer.get(i));
+        return result;
+    }
+
+    private ArrayList<PeerDescriptor> selectView() {
+        PeerDescriptor own = null;
+        for(int i = 0; i < buffer.size(); i++) {
+            if(buffer.size() < 3) break;
+            if(buffer.get(i).getPeerAddress().getPeerAddress().equals(self.getPeerAddress())) {
+                own = buffer.get(i);
+                break;
+            }
+        }
+
+        if(own != null)
+            buffer.remove(own);
+
+        if(buffer.size() <= viewSize)
+            return buffer;
+
+        //clear buffer from irrelevant peers
+        if(leader != null) {
+            for(int i=0; i < buffer.size(); i++){
+                if(buffer.get(i).getPeerAddress().equals(leader))
+                    buffer.remove(i);
+            }
+        }
+
+        ArrayList<PeerDescriptor> view = new ArrayList<PeerDescriptor>();
+        for(int i=0; i< viewSize; i++)
+            view.add(buffer.get(i));
+
+        return view;
+    }
+
+    //select peer from view
+    private PeerDescriptor selectPeerFromView() {
+        if(view.size() == 0)
+            return null;
+
+        if(view.size() == 1)
+            return view.get(0);
+
+        Collections.sort(view, new RankComparator(self));
+        int halfViewSize = view.size() / 2;
+        int selectedPeer = rnd.nextInt(halfViewSize);
+
+        return view.get(selectedPeer);
+    }
+
+    //merge function
+    private ArrayList<PeerDescriptor> merge(ArrayList<PeerDescriptor> first, ArrayList<PeerDescriptor> second) {
+        if(first.size() == 0)
+            return second;
+
+        ArrayList<PeerDescriptor> result = new ArrayList<PeerDescriptor>();
+
+        for(int i=0; i<first.size(); i++){
+            boolean found = false;
+
+            for(int j=0; j<second.size(); j++){
+                //items with the same Address
+                if(first.get(i).equals(second.get(j))) {
+                    found = true;
+
+                    //save item with a smaller age
+                    if(first.get(i).getAge() <= second.get(j).getAge())
+                        result.add(first.get(i));
+                    else
+                        result.add(second.get(j));
+
+                    break;
+                }
+            }
+
+            if(!found) result.add(first.get(i));
+        }
+
+        for(int i=0; i<second.size(); i++){
+            if(!result.contains(second.get(i)))
+                result.add(second.get(i));
+        }
+
+        return result;
+    }
+
+    //---------------------------------------------------------------
+
+    //-------------------- Heartbeat --------------------------------
+    Handler<PingSchedule> pingScheduleHandler = new Handler<PingSchedule>() {
+    @Override
+    public void handle(PingSchedule pingSchedule) {
+        if(leader == null || leader.equals(self)) return;
+
+        ScheduleTimeout pingResponseTimeout = new ScheduleTimeout(T);
+        pingResponseTimeout.setTimeoutEvent(new PingResponseSchedule(pingResponseTimeout));
+        pingFromLeader = false;
+        trigger(new PingMessage(self, leader), networkPort);
+        trigger(pingResponseTimeout, timerPort);
+
+        logger.info(String.format("%s ping to %s", self.getPeerAddress().getId(), leader.getPeerAddress().getId()));
+        }
+    };
+
+    Handler<PingMessage> pingMessageHandler = new Handler<PingMessage>() {
+        @Override
+        public void handle(PingMessage pingMessage) {
+            trigger(new PingOkMessage(self, pingMessage.getPeerSource()), networkPort);
+        }
+    };
+
+    Handler<PingOkMessage> pingOkMessageHandler = new Handler<PingOkMessage>() {
+        @Override
+        public void handle(PingOkMessage pingOkMessage) {
+            isLeaderSuspected = false;
+            pingFromLeader = true;
         }
     };
 
     Handler<PingResponseSchedule> pingResponseScheduleHandler = new Handler<PingResponseSchedule>() {
     @Override
     public void handle(PingResponseSchedule pingResponseSchedule) {
-        //if (leader == null) return;
-            if(pingFromLeader && leader!=null) {
-                ScheduleTimeout pingResponseTimeout = new ScheduleTimeout(T);
-                pingResponseTimeout.setTimeoutEvent(new PingResponseSchedule(pingResponseTimeout));
-                pingFromLeader = false;
-                trigger(new PingMessage(self, leader), networkPort);
-                trigger(pingResponseTimeout, timerPort);
-                return;
-            }
+        if(leader!=null && pingFromLeader) {
+            ScheduleTimeout pingResponseTimeout = new ScheduleTimeout(T);
+            pingResponseTimeout.setTimeoutEvent(new PingResponseSchedule(pingResponseTimeout));
+            pingFromLeader = false;
+            trigger(new PingMessage(self, leader), networkPort);
+            trigger(pingResponseTimeout, timerPort);
+            return;
+        }
 
-            isLeaderSuspected = true;
-            logger.info(String.format("%s - leader suspected", self.getPeerAddress().getId()));
-            requiredAcks = (int)Math.ceil(((double)(view.size()-1))/2);
+        isLeaderSuspected = true;
+        logger.info(String.format("%s - leader suspected", self.getPeerAddress().getId()));
+        requiredAcks = (int)Math.ceil(((double)(view.size()-1))/2);
+
         logger.info("============= View =============");
         for(int i=0; i<view.size(); i++) {
             logger.info(String.format("%s partner - %s age %s", self.getPeerAddress().getId(), view.get(i).getPeerAddress().getPeerAddress().getId(), view.get(i).getAge()));
         }
         logger.info("++++++++++++++++++++++++++++++++++++");
+
         logger.info(String.format("Need %s acks", requiredAcks));
             for(int i=0; i<view.size(); i++)
                 trigger(new IsLeaderSuspectedMessage(self, view.get(i).getPeerAddress()), networkPort);
@@ -201,177 +403,29 @@ public final class TMan extends ComponentDefinition {
             logger.info(String.format("%s - got acks!", self.getPeerAddress().getId()));
 
             if(leader != null) {
-                PeerDescriptor toRemove = null;
-                for(int i=0; i<view.size(); i++) {
-                    if(view.get(i).getPeerAddress().getPeerAddress().getId() == leader.getPeerAddress().getId()) {
-                        toRemove = view.get(i);
-                        break;
-                    }
-                }
-
-                if(toRemove != null) {
-                    view.remove(toRemove);
-                    if(buffer.contains(toRemove)) buffer.remove(toRemove);
-                }
+                removeLeaderFromViewAndBuffer(leader);
+                leader = null;
             }
-
-            leader = null;
 
             StartLeaderElection(null);
         }
     };
 
-    Handler<PingMessage> pingMessageHandler = new Handler<PingMessage>() {
-        @Override
-        public void handle(PingMessage pingMessage) {
-            trigger(new PingOkMessage(self, pingMessage.getPeerSource()), networkPort);
-        }
-    };
-
-    Handler<PingOkMessage> pingOkMessageHandler = new Handler<PingOkMessage>() {
-        @Override
-        public void handle(PingOkMessage pingOkMessage) {
-            isLeaderSuspected = false;
-            pingFromLeader = true;
-        }
-    };
-//-------------------------------------------------------------------
-    Handler<TManSchedule> handleRound = new Handler<TManSchedule>() {
-        @Override
-        public void handle(TManSchedule event) {
-            tmanPartners = getPartners();
-            Snapshot.updateTManPartners(self, tmanPartners);
-
-            // Publish sample to connected components
-            trigger(new TManSample(tmanPartners), tmanPartnersPort);
-        }
-    };
-
-    private ArrayList<PeerAddress> getPartners() {
-        ArrayList<PeerAddress> result = new ArrayList<PeerAddress>();
-
+    private void removeLeaderFromViewAndBuffer(PeerAddress leader) {
         for(int i=0; i<view.size(); i++)
-            result.add(view.get(i).getPeerAddress());
-
-        return result;
+            if(view.get(i).getPeerAddress().equals(leader.getPeerAddress()))
+                view.remove(i);
+        for(int i=0; i<buffer.size(); i++)
+            if(buffer.get(i).getPeerAddress().equals(leader.getPeerAddress()))
+                buffer.remove(i);
     }
-
     //-------------------------------------------------------------------
-    Handler<CyclonSample> handleCyclonSample = new Handler<CyclonSample>() {
-        @Override
-        public void handle(CyclonSample event) {
-            //ArrayList<PeerAddress> cyclonPartners1 = event.getSample();
-            ArrayList<PeerAddress> cyclonPartners = removePartnersNotFromYourPartiotion(event.getSample());
 
-            if(cyclonPartners.size() == 0) return;
-
-            PeerDescriptor q = selectPeerFromView();
-            buffer = merge(view, new ArrayList<PeerDescriptor>(){{new PeerDescriptor(self);}});
-
-            PeerAddress rndPeer = cyclonPartners.get(rnd.nextInt(cyclonPartners.size()));
-            ArrayList<PeerDescriptor> myDescriptor = new ArrayList<PeerDescriptor>();
-            myDescriptor.add(new PeerDescriptor(rndPeer));
-            buffer = merge(buffer, myDescriptor);
-
-            if(q == null) {
-                Collections.sort(buffer, new RankComparator(rndPeer));
-                trigger(new ExchangeMsg.Request(UUID.randomUUID(), new DescriptorBuffer(self, takeM(buffer)), self, rndPeer), networkPort);
-            }
-            else {
-                Collections.sort(buffer, new RankComparator(q.getPeerAddress()));
-                trigger(new ExchangeMsg.Request(UUID.randomUUID(), new DescriptorBuffer(self, takeM(buffer)), self, q.getPeerAddress()), networkPort);
-            }
-        }
-    };
-
-    private ArrayList<PeerAddress> removePartnersNotFromYourPartiotion(ArrayList<PeerAddress> cyclonPartners) {
-        ArrayList<PeerAddress> result = new ArrayList<PeerAddress>();
-
-        for(int i=0; i<cyclonPartners.size(); i++) {
-            int partnerMod = cyclonPartners.get(i).getPeerAddress().getId() % numberOfPartitions;
-            if(partnerMod == modPartition)
-                result.add(cyclonPartners.get(i));
-        }
-
-        return result;
-    }
-
-    //-------------------------------------------------------------------
-    Handler<ExchangeMsg.Request> handleTManPartnersRequest = new Handler<ExchangeMsg.Request>() {
-        @Override
-        public void handle(ExchangeMsg.Request event) {
-
-            buffer = merge(view, new ArrayList<PeerDescriptor>(){{new PeerDescriptor(self);}});
-            Collections.sort(buffer, new RankComparator(event.getPeerSource()));
-
-            trigger(new ExchangeMsg.Response(UUID.randomUUID(), new DescriptorBuffer(self, takeM(buffer)), self, event.getPeerSource()), networkPort);
-            buffer = merge(event.getRandomBuffer().getDescriptors(), view);
-
-            Collections.sort(buffer, new RankComparator(self));
-            view = selectView();
-        }
-    };
-    
-    Handler<ExchangeMsg.Response> handleTManPartnersResponse = new Handler<ExchangeMsg.Response>() {
-        @Override
-        public void handle(ExchangeMsg.Response event) {
-
-            buffer = merge(event.getSelectedBuffer().getDescriptors(), view);
-
-
-            Collections.sort(buffer, new RankComparator(self));
-            view = selectView();
-
-//            logger.info("============= View =============");
-//            for(int i=0; i<view.size(); i++) {
-//                logger.info(String.format("%s partner - %s", self.getPeerAddress().getId(), view.get(i).getPeerAddress().getPeerAddress().getId()));
-//            }
-//            logger.info("++++++++++++++++++++++++++++++++++++");
-
-             //Increase age for peers that did not appear to the peers of event and remove if > 100
-            int age;
-            for (int i = 0 ; i<buffer.size() ; i++) {
-                if (!event.getSelectedBuffer().getDescriptors().contains(buffer.get(i)))  {
-                    age = buffer.get(i).incrementAndGetAge();
-                    if (age > 100)
-                        buffer.remove(i);
-                }
-            }
-
-            if(cyclesCount == -1) return;
-
-            if(leader != null || self.getPeerAddress().getId() > numberOfPartitions) {
-                cyclesCount = -1;
-                return;
-            }
-
-            cyclesCount++;
-            if(cyclesCount != cyclesForLeaderTest) return;
-
-            cyclesCount = -1;
-            StartLeaderElection(null);
-        }
-    };
-
-    //Handle coordinator message that announces a leader
-    Handler<CoordinatorMessage> coordinatorMessageHandler = new Handler<CoordinatorMessage>() {
-        @Override
-        public void handle(CoordinatorMessage coordinatorMessage) {
-            leader = coordinatorMessage.getPeerSource();
-
-            logger.info(String.format("%s - Leader: %s", self.getPeerAddress().getId(), leader.getPeerAddress().getId()));
-
-            ScheduleTimeout pingLeaderTimeout = new ScheduleTimeout(period);
-            pingLeaderTimeout.setTimeoutEvent(new PingSchedule(pingLeaderTimeout));
-            trigger(pingLeaderTimeout, timerPort);
-            return;
-        }
-    };
-
+    //---------------------- Leader election ----------------------------
     private void StartLeaderElection(ArrayList<PeerAddress> additionalPeer) {
         if(leader != null && additionalPeer == null) return;
 
-        if(leader == self) {
+        if(leader == self && additionalPeer != null) {
             for(PeerAddress peer : additionalPeer)
                 trigger(new ElectionMessage(self, peer), networkPort);
             return;
@@ -380,12 +434,7 @@ public final class TMan extends ComponentDefinition {
         if(isLeaderElectionRunning) return;
 
         if(leader != null) {
-            for(int i=0; i<view.size(); i++)
-                if(view.get(i).getPeerAddress().equals(leader.getPeerAddress()))
-                    view.remove(i);
-            for(int i=0; i<buffer.size(); i++)
-                if(buffer.get(i).getPeerAddress().equals(leader.getPeerAddress()))
-                    buffer.remove(i);
+            removeLeaderFromViewAndBuffer(leader);
             leader = null;
         }
 
@@ -403,7 +452,7 @@ public final class TMan extends ComponentDefinition {
         if(view.size() > 0 && view.get(0).getPeerAddress().getPeerAddress().getId() >= self.getPeerAddress().getId()) {
             leaderKnowledge = LeaderKnowledge.I_M_THE_LEADER;
             leader = self;
-            logger.info(self.getPeerAddress().getId() + " I'm the leader!");
+            logger.info(self.getPeerAddress().getId() + " I'sampleZise the leader!");
             logger.info(String.format("%s - Leader: %s", self.getPeerAddress().getId(), leader.getPeerAddress().getId()));
 
             for(int i=0; i < view.size(); i++) {
@@ -435,7 +484,22 @@ public final class TMan extends ComponentDefinition {
         trigger(rst, timerPort);
     }
 
-    //if no ok message from a node with higher utility after timeout, then I'm the leader
+    //Handle coordinator message that announces a leader
+    Handler<CoordinatorMessage> coordinatorMessageHandler = new Handler<CoordinatorMessage>() {
+        @Override
+        public void handle(CoordinatorMessage coordinatorMessage) {
+            leader = coordinatorMessage.getPeerSource();
+
+            logger.info(String.format("%s - Leader: %s", self.getPeerAddress().getId(), leader.getPeerAddress().getId()));
+
+            ScheduleTimeout pingLeaderTimeout = new ScheduleTimeout(period);
+            pingLeaderTimeout.setTimeoutEvent(new PingSchedule(pingLeaderTimeout));
+            trigger(pingLeaderTimeout, timerPort);
+            return;
+        }
+    };
+
+    //if no ok message from a node with higher utility after timeout, then I'sampleZise the leader
     Handler<ElectionMessageTimeout> electionMessageTimeoutHandler = new Handler<ElectionMessageTimeout>() {
         @Override
         public void handle(ElectionMessageTimeout electionMessageTimeout) {
@@ -495,98 +559,9 @@ public final class TMan extends ComponentDefinition {
 
         }
     };
+    //---------------------------------------------------------------
 
-    private ArrayList<PeerDescriptor> takeM(ArrayList<PeerDescriptor> buffer) {
-        if(buffer.size() <= m)
-            return buffer;
-
-        ArrayList<PeerDescriptor> result = new ArrayList<PeerDescriptor>();
-        for(int i=0; i<m; i++)
-            result.add(buffer.get(i));
-        return result;
-    }
-
-    private ArrayList<PeerDescriptor> selectView() {
-        PeerDescriptor own = null;
-        for(int i = 0; i < buffer.size(); i++) {
-            if(buffer.size() < 3) break;
-            if(buffer.get(i).getPeerAddress().getPeerAddress().equals(self.getPeerAddress())) {
-                own = buffer.get(i);
-                break;
-            }
-        }
-
-        if(own != null)
-            buffer.remove(own);
-
-        if(buffer.size() <= c)
-            return buffer;
-
-        //clear buffer from irrelevant peers
-        if(leader != null) {
-            for(int i=0; i < buffer.size(); i++){
-                if(buffer.get(i).getPeerAddress().equals(leader))
-                    buffer.remove(i);
-            }
-        }
-
-        ArrayList<PeerDescriptor> view = new ArrayList<PeerDescriptor>();
-        for(int i=0; i<c; i++)
-            view.add(buffer.get(i));
-
-        return view;
-    }
-
-    //select peer from view
-    private PeerDescriptor selectPeerFromView() {
-        if(view.size() == 0)
-            return null;
-
-        if(view.size() == 1)
-            return view.get(0);
-
-        Collections.sort(view, new RankComparator(self));
-        int halfViewSize = view.size() / 2;
-        int selectedPeer = rnd.nextInt(halfViewSize);
-
-        return view.get(selectedPeer);
-    }
-
-    //merge function
-    private ArrayList<PeerDescriptor> merge(ArrayList<PeerDescriptor> first, ArrayList<PeerDescriptor> second) {
-        if(first.size() == 0)
-            return second;
-
-        ArrayList<PeerDescriptor> result = new ArrayList<PeerDescriptor>();
-
-        for(int i=0; i<first.size(); i++){
-            boolean found = false;
-
-            for(int j=0; j<second.size(); j++){
-                //items with the same Address
-                if(first.get(i).equals(second.get(j))) {
-                    found = true;
-
-                    //save item with a smaller age
-                    if(first.get(i).getAge() <= second.get(j).getAge())
-                        result.add(first.get(i));
-                    else
-                        result.add(second.get(j));
-
-                    break;
-                }
-            }
-
-            if(!found) result.add(first.get(i));
-        }
-
-        for(int i=0; i<second.size(); i++){
-            if(!result.contains(second.get(i)))
-                result.add(second.get(i));
-        }
-
-        return result;
-    }
+    //---------------- Forward write to the leader ------------------
 
     //Handle AddIndexRequest triggered from Search Component
     Handler<AddEntryRequest> handleAddEntryRequestFromSearch = new Handler<AddEntryRequest>() {
@@ -620,7 +595,7 @@ public final class TMan extends ComponentDefinition {
         }
 
         //If I don't know the leader forward the request
-        if (leader !=self && view.size() >0 ){
+        if (leader !=self && view.size() >0) {
                 trigger(new AddEntryRequest(self, view.get(minPos).getPeerAddress(), event.getInitiator(), event.getTitle(), event.getMagnet(), event.getRequestID()), networkPort);
         }
         //If I am the leader, trigger the request to search component
@@ -631,7 +606,7 @@ public final class TMan extends ComponentDefinition {
     }
 
     private PeerDescriptor getTheClosestToInitiator(PeerAddress initiator) {
-        ArrayList<PeerDescriptor> sortedView= view;
+        ArrayList<PeerDescriptor> sortedView = view;
         Collections.sort(sortedView, new RankComparator(initiator));
         return sortedView.get(0);
     }
@@ -647,4 +622,5 @@ public final class TMan extends ComponentDefinition {
             }
         }
     };
+    //------------------------------------------------------------
 }
