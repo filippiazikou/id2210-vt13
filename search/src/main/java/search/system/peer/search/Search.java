@@ -130,19 +130,7 @@ public final class Search extends ComponentDefinition {
                 e.printStackTrace();
             }
 
-
-
             Snapshot.updateNum(self, num);
-//            String title = "The Art of Computer Science";
-//            int id = 100;
-//            String magnet = "a896f7155237fb27e2eaa06033b5796d7ae84a1d";
-//            //addEntry(title,id, magnet);
-//            trigger(new AddEntryRequest(self, self, self, title, magnet, id), tmanSamplePort);
-//            //Start Timer for ACK
-//            ScheduleTimeout rst2 = new ScheduleTimeout(10000);
-//            rst2.setTimeoutEvent(new AddEntryACKTimeout(rst2, id, title, magnet));
-//            trigger(rst2, timerPort);
-
         }
     };
 //-------------------------------------------------------------------	
@@ -289,38 +277,11 @@ public final class Search extends ComponentDefinition {
                 break;
         }
 
-        /*Keep the first 10 items*/
+        //Keep the first 10 items
         for (int i=10 ; i<results.size() ; i++)
             results.remove(i);
 
         return results;
-    }
-
-    private BasicTorrentData retrieveRecordFromIndex(int value) throws ParseException, IOException {
-        // the "title" arg specifies the default field to use when no field is explicitly specified in the query.
-        //Query q = new QueryParser(Version.LUCENE_42, "id", analyzer).parse(value);
-        Query q = NumericRangeQuery.newIntRange("id", value, value, true, true);
-        IndexSearcher searcher = null;
-        IndexReader reader;
-        try {
-            reader = DirectoryReader.open(index);
-            searcher = new IndexSearcher(reader);
-        } catch (IOException ex) {
-            java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
-            System.exit(-1);
-        }
-
-        int hitsPerPage = 1;
-        TopScoreDocCollector collector = TopScoreDocCollector.create(hitsPerPage, true);
-
-        searcher.search(q, collector);
-        ScoreDoc[] hits = collector.topDocs().scoreDocs;
-
-        if(hits.length == 0) return null;
-
-        int docId = hits[0].doc;
-        Document d = searcher.doc(docId);
-        return new BasicTorrentData(Integer.parseInt(d.get("id")), d.get("title"), d.get("magnet"));
     }
 
     private void garbageCollection() {
@@ -372,7 +333,6 @@ public final class Search extends ComponentDefinition {
         @Override
         public void handle(WebResponseTimeout event) {
             WebResponse response;
-            String title = event.getQ();
             StringBuilder sb = new StringBuilder("<!DOCTYPE html PUBLIC \"-//W3C");
             sb.append("//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR");
             sb.append("/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http:");
@@ -384,13 +344,65 @@ public final class Search extends ComponentDefinition {
             sb.append("</head><body><h2 align=\"center\" class=\"style2\">");
             sb.append("ID2210 (Decentralized Search for Piratebay)</h2><br>");
 
-            ArrayList<String> results = new ArrayList<String>();
-            results =  searchResults.get(event.getEvent().getId());
-            sb.append("Found ").append(results.size()).append(" entries.<ul>");
-            for (int i = 0; i < results.size() ; i++) {
-                sb.append("<li>").append(i + 1).append(". ").append(results.get(i)).append("</li>");
+            ArrayList<String> results =  searchResults.get(event.getEvent().getId());
+
+            StandardAnalyzer analyzer = new StandardAnalyzer(Version.LUCENE_42);
+            Directory index = new RAMDirectory();
+            IndexWriterConfig config = new IndexWriterConfig(Version.LUCENE_42, analyzer);
+            IndexWriter writer;
+            try {
+                writer = new IndexWriter(index, config);
+                writer.commit();
+                writer.close();
+            } catch (IOException e) {
+                e.printStackTrace();
             }
-            sb.append("</ul>");
+            try {
+                IndexWriter w = new IndexWriter(index, config);
+                for (int i = 0; i < results.size() ; i++) {
+                    String[] args = results.get(i).split("\t");
+                    Document doc = new Document();
+                    doc.add(new TextField("title", args[1], Field.Store.YES));
+                    doc.add(new TextField("magnet", args[2], Field.Store.YES));
+                    doc.add(new IntField("id", Integer.parseInt(args[0]), Field.Store.YES));
+                    w.addDocument(doc);
+                }
+                w.close();
+
+                Query q = new QueryParser(Version.LUCENE_42, "title", analyzer).parse(event.getQ());
+                IndexSearcher searcher = null;
+                IndexReader reader = null;
+                try {
+                    reader = DirectoryReader.open(index);
+                    searcher = new IndexSearcher(reader);
+                } catch (IOException ex) {
+                    java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
+                    System.exit(-1);
+                }
+
+                int hitsPerPage = 50;
+                TopScoreDocCollector collector = TopScoreDocCollector.create(hitsPerPage, true);
+
+                searcher.search(q, collector);
+                ScoreDoc[] hits = collector.topDocs().scoreDocs;
+
+                // display results
+                sb.append("Found ").append(hits.length).append(" entries.<ul>");
+                for (int j = 0; j < hits.length; j++) {
+                    int docId = hits[j].doc;
+                    Document d = searcher.doc(docId);
+                    sb.append("<li>").append(j + 1).append(". ").append(d.get("id")).append("\t").append(d.get("title")).append("\t").append(d.get("magnet")).append("</li>");
+                }
+                sb.append("</ul>");
+
+                // reader can only be closed when there
+                // is no need to access the documents any more.
+                reader.close();
+            } catch (IOException e) {
+                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+            } catch (ParseException e) {
+                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+            }
 
             searchResults.remove(event.getEvent().getId());
 
@@ -688,7 +700,6 @@ public final class Search extends ComponentDefinition {
                 } catch (IOException e) {
                     e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
                 }
-
 
                 sb.append("Entry: ").append(event.getEntryId()).append(" - ").append(args[1]).append(" - ").append(args[2]);
                 sb.append("</body></html>");
