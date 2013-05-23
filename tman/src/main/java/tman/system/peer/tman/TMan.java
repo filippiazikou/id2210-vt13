@@ -123,6 +123,8 @@ public final class TMan extends ComponentDefinition {
             tmanPartners = getPartners();
             Snapshot.updateTManPartners(self, tmanPartners);
 
+            //Snapshot.updateTManPartners(self, tmanPartners);
+
             // Publish sample to connected components
             trigger(new TManSample(tmanPartners), tmanPartnersPort);
         }
@@ -456,6 +458,8 @@ public final class TMan extends ComponentDefinition {
 
     //---------------------- Leader election ----------------------------
     private void startLeaderElection(ArrayList<PeerAddress> additionalPeer) {
+        //Snapshot.leaderElectionStart(view.size());
+
         if(leader != null && leader.equals(self)) {
             if(additionalPeer == null) return;
 
@@ -524,6 +528,9 @@ public final class TMan extends ComponentDefinition {
         public void handle(CoordinatorMessage coordinatorMessage) {
             leader = coordinatorMessage.getPeerSource();
 
+//            Snapshot.increaseLeaderMessages();
+//            Snapshot.leaderElectionTime();
+
             logger.info(String.format("%s - Leader: %s", self.getPeerAddress().getId(), leader.getPeerAddress().getId()));
 
             ScheduleTimeout pingLeaderTimeout = new ScheduleTimeout(period);
@@ -554,6 +561,8 @@ public final class TMan extends ComponentDefinition {
     Handler<ElectionMessage> electionMessageHandler = new Handler<ElectionMessage>() {
         @Override
         public void handle(ElectionMessage electionMessage) {
+            //Snapshot.increaseLeaderMessages();
+
             logger.info(self.getPeerAddress().getId() + " see election message from " + electionMessage.getPeerSource().getPeerAddress().getId());
             trigger(new OkMessage(self, electionMessage.getPeerSource()), networkPort);
 
@@ -617,6 +626,16 @@ public final class TMan extends ComponentDefinition {
     };
 
     void addEntryRequest(AddEntryRequest event) {
+        //if (event.getPeerSource() == event.getPeerDestination()) {
+        //    Snapshot.initSteps();
+        //}
+        //else if (leader != null && leader.equals(self)) {
+        //    Snapshot.finishSteps();
+        //}
+        //else {
+        //    Snapshot.increaseSteps();
+        //}
+
         //If I am the leader, trigger the request to search component
         if(leader != null && leader.equals(self)) {
             trigger(new AddEntryRequest(self, self, event.getInitiator(), event.getTitle(), event.getMagnet(), event.getRequestID()), tmanPartnersPort);
@@ -650,6 +669,16 @@ public final class TMan extends ComponentDefinition {
                 trigger(new AddEntryACK(self, self, self, event.getRequestID(), event.getEntryId()), tmanPartnersPort);
             else
                 trigger(new AddEntryACK(self, getTheClosestToInitiator(event.getInitiator()).getPeerAddress(), event.getInitiator(), event.getRequestID(), event.getEntryId()), networkPort);
+
+            //if (leader!=null && leader.equals(self)) {
+            //    Snapshot.initAck();
+            //}
+            //else if (event.getInitiator().equals(self)) {
+            //    Snapshot.finishedAck();
+            //}
+            //else {
+            //    Snapshot.increaseAck();
+            //}
         }
     };
     //------------------------------------------------------------
