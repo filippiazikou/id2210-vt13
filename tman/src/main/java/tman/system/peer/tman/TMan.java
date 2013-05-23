@@ -51,6 +51,7 @@ public final class TMan extends ComponentDefinition {
 
     private ArrayList<PeerDescriptor> view = new ArrayList<PeerDescriptor>();
     private ArrayList<PeerDescriptor> buffer = new ArrayList<PeerDescriptor>();
+    private ArrayList<PeerDescriptor> oldView = new ArrayList<PeerDescriptor>();
     Random rnd = new Random();
 
     public class TManSchedule extends Timeout {
@@ -212,18 +213,44 @@ public final class TMan extends ComponentDefinition {
                 }
             }
 
-            if(cyclesCount == -1) return;
+            TryToStartLeaderElection();
+        }
 
-            if(leader != null || self.getPeerAddress().getId() > numberOfPartitions) {
-                cyclesCount = -1;
+        private void TryToStartLeaderElection() {
+            if(self.getPeerAddress().getId() > numberOfPartitions || leader != null) return;
+
+            cyclesCount++;
+
+            if(oldView.size() == 0) {
+                oldView = view;
                 return;
             }
 
-            cyclesCount++;
-            if(cyclesCount != cyclesForLeaderTest) return;
+            if(oldView.size() != view.size()) {
+                oldView = view;
+                cyclesForLeaderTest = 5;
+                return;
+            }
 
-            cyclesCount = -1;
-            StartLeaderElection(null);
+            boolean containsAll = true;
+            for(int i=0; i<view.size(); i++){
+                if(!oldView.contains(view.get(i))) {
+                    containsAll = false;
+                    break;
+                }
+            }
+
+            if(!containsAll) {
+                oldView = view;
+                cyclesForLeaderTest = 5;
+                return;
+            }
+
+            cyclesForLeaderTest--;
+            if(cyclesForLeaderTest == 0) {
+                logger.info(String.format("%s - Starting leader election on %s cycle, gradient converged on %s cycle", self.getPeerAddress().getId(), cyclesCount, cyclesCount - 5));
+                startLeaderElection(null);
+            }
         }
     };
 
@@ -402,30 +429,25 @@ public final class TMan extends ComponentDefinition {
 
             logger.info(String.format("%s - got acks!", self.getPeerAddress().getId()));
 
-            if(leader != null) {
-                removeLeaderFromViewAndBuffer(leader);
-                leader = null;
-            }
-
-            StartLeaderElection(null);
+            startLeaderElection(null);
         }
     };
 
     private void removeLeaderFromViewAndBuffer(PeerAddress leader) {
         for(int i=0; i<view.size(); i++)
-            if(view.get(i).getPeerAddress().equals(leader.getPeerAddress()))
+            if(view.get(i).getPeerAddress().getPeerAddress().equals(leader.getPeerAddress()))
                 view.remove(i);
         for(int i=0; i<buffer.size(); i++)
-            if(buffer.get(i).getPeerAddress().equals(leader.getPeerAddress()))
+            if(buffer.get(i).getPeerAddress().getPeerAddress().equals(leader.getPeerAddress()))
                 buffer.remove(i);
     }
     //-------------------------------------------------------------------
 
     //---------------------- Leader election ----------------------------
-    private void StartLeaderElection(ArrayList<PeerAddress> additionalPeer) {
-        if(leader != null && additionalPeer == null) return;
+    private void startLeaderElection(ArrayList<PeerAddress> additionalPeer) {
+        if(leader != null && leader.equals(self)) {
+            if(additionalPeer == null) return;
 
-        if(leader == self && additionalPeer != null) {
             for(PeerAddress peer : additionalPeer)
                 trigger(new ElectionMessage(self, peer), networkPort);
             return;
@@ -452,7 +474,7 @@ public final class TMan extends ComponentDefinition {
         if(view.size() > 0 && view.get(0).getPeerAddress().getPeerAddress().getId() >= self.getPeerAddress().getId()) {
             leaderKnowledge = LeaderKnowledge.I_M_THE_LEADER;
             leader = self;
-            logger.info(self.getPeerAddress().getId() + " I'sampleZise the leader!");
+            logger.info(self.getPeerAddress().getId() + " I'm the leader!");
             logger.info(String.format("%s - Leader: %s", self.getPeerAddress().getId(), leader.getPeerAddress().getId()));
 
             for(int i=0; i < view.size(); i++) {
@@ -504,6 +526,8 @@ public final class TMan extends ComponentDefinition {
         @Override
         public void handle(ElectionMessageTimeout electionMessageTimeout) {
             if(leaderKnowledge == LeaderKnowledge.MAYBE_ME) {
+                leaderKnowledge = LeaderKnowledge.I_M_THE_LEADER;
+                leader = self;
                 for(int i=0; i < view.size(); i++)
                     trigger(new CoordinatorMessage(self, view.get(i).getPeerAddress()), networkPort);
 
@@ -527,7 +551,7 @@ public final class TMan extends ComponentDefinition {
 
             if(self.getPeerAddress().getId() < electionMessage.getPeerSource().getPeerAddress().getId()) {
                 arrayForGradientLeaders.add(electionMessage.getPeerSource());
-                StartLeaderElection(arrayForGradientLeaders);
+                startLeaderElection(arrayForGradientLeaders);
             }
         }
     };
@@ -554,7 +578,7 @@ public final class TMan extends ComponentDefinition {
             if(isWaitingForElectionMessage && leaderKnowledge == LeaderKnowledge.NO) {
                 isWaitingForElectionMessage = false;
                 leaderKnowledge = LeaderKnowledge.MAYBE_ME;
-                StartLeaderElection(null);
+                startLeaderElection(null);
             }
 
         }
@@ -580,29 +604,24 @@ public final class TMan extends ComponentDefinition {
     };
 
     void addEntryRequest(AddEntryRequest event) {
-        //get the minimum id of view
-        int min = -1;
-        int minPos=0;
-        for (int i=0 ; i<view.size();i++){
-            if (min == -1)   {
-                min =  view.get(i).getPeerAddress().getPeerAddress().getId();
-                minPos = i;
-            }
-            else if (view.get(i).getPeerAddress().getPeerAddress().getId()<min)  {
-                min =  view.get(i).getPeerAddress().getPeerAddress().getId();
-                minPos = i;
-            }
-        }
-
-        //If I don't know the leader forward the request
-        if (leader !=self && view.size() >0) {
-                trigger(new AddEntryRequest(self, view.get(minPos).getPeerAddress(), event.getInitiator(), event.getTitle(), event.getMagnet(), event.getRequestID()), networkPort);
-        }
         //If I am the leader, trigger the request to search component
-        else if (leader == self) {
+        if(leader != null && leader.equals(self)) {
             trigger(new AddEntryRequest(self, self, event.getInitiator(), event.getTitle(), event.getMagnet(), event.getRequestID()), tmanPartnersPort);
-
+            return;
         }
+
+        if(view.size() == 0) return;
+        //if we still have ids lower than new leader, remove it
+        if(leader != null) {
+            for(int i=0; i<view.size(); i++)
+                if(view.get(i).getPeerAddress().getPeerAddress().getId() < leader.getPeerAddress().getId())
+                    view.remove(i);
+        }
+
+        //get the minimum id of view
+        Collections.sort(view, new LinearComparator());
+        //If I don't know the leader forward the request
+        trigger(new AddEntryRequest(self, view.get(0).getPeerAddress(), event.getInitiator(), event.getTitle(), event.getMagnet(), event.getRequestID()), networkPort);
     }
 
     private PeerDescriptor getTheClosestToInitiator(PeerAddress initiator) {
@@ -614,12 +633,10 @@ public final class TMan extends ComponentDefinition {
     Handler<AddEntryACK> handleAddEntryACK = new Handler<AddEntryACK>() {
         @Override
         public void handle(AddEntryACK event) {
-            if (event.getInitiator() == self) {
+            if (event.getInitiator() == self)
                 trigger(new AddEntryACK(self, self, self, event.getRequestID(), event.getEntryId()), tmanPartnersPort);
-            }
-            else {
+            else
                 trigger(new AddEntryACK(self, getTheClosestToInitiator(event.getInitiator()).getPeerAddress(), event.getInitiator(), event.getRequestID(), event.getEntryId()), networkPort);
-            }
         }
     };
     //------------------------------------------------------------

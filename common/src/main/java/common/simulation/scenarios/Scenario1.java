@@ -39,7 +39,7 @@ public class Scenario1 extends Scenario {
             process1.startAt(1000);
             process2.startAfterTerminationOf(1000, process1);
             process3.startAfterTerminationOf(3000, process2);
-            process4.startAfterTerminationOf(3000, process3);
+            process4.startAfterTerminationOf(5000, process3);
         }
     };
 
