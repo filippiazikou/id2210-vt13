@@ -39,7 +39,7 @@ public final class TMan extends ComponentDefinition {
     private int cyclesCount = 0;
     private int cyclesForLeaderTest = 5;
     private int viewSize;
-    private int sampleZise;
+    private int sampleSize;
     private boolean pingFromLeader = false;
     private int requiredAcks = 0;
     private boolean isLeaderSuspected = false;
@@ -51,7 +51,9 @@ public final class TMan extends ComponentDefinition {
 
     private ArrayList<PeerDescriptor> view = new ArrayList<PeerDescriptor>();
     private ArrayList<PeerDescriptor> buffer = new ArrayList<PeerDescriptor>();
+    //list to understand when gradient is stable to start a leader election
     private ArrayList<PeerDescriptor> oldView = new ArrayList<PeerDescriptor>();
+    //maintains a list of peers that send heartbeat message to the leader to start heartbeat from peers that join view on the leader
     private ArrayList<PeerDescriptor> pingingMe =new ArrayList<PeerDescriptor>();
     Random rnd = new Random();
 
@@ -103,7 +105,7 @@ public final class TMan extends ComponentDefinition {
             tmanConfiguration = init.getConfiguration();
             period = tmanConfiguration.getPeriod();
             viewSize = init.getViewSize();
-            sampleZise = init.getExcahngeSampleSize();
+            sampleSize = init.getExcahngeSampleSize();
 
             SchedulePeriodicTimeout rst = new SchedulePeriodicTimeout(period, period);
             rst.setTimeoutEvent(new TManSchedule(rst));
@@ -142,11 +144,11 @@ public final class TMan extends ComponentDefinition {
     Handler<CyclonSample> handleCyclonSample = new Handler<CyclonSample>() {
         @Override
         public void handle(CyclonSample event) {
-            //ArrayList<PeerAddress> cyclonPartners1 = event.getSample();
             ArrayList<PeerAddress> cyclonPartners = removePartnersNotFromYourPartiotion(event.getSample());
 
             if(cyclonPartners.size() == 0) return;
 
+            //choose peer to exchange view with
             PeerDescriptor q = selectPeerFromView();
             buffer = merge(view, new ArrayList<PeerDescriptor>(){{new PeerDescriptor(self);}});
 
@@ -226,6 +228,7 @@ public final class TMan extends ComponentDefinition {
                 }
             }
 
+            //peers with id <= partitionAmount will start leader election when gradient is stable
             TryToStartLeaderElection();
         }
 
@@ -233,7 +236,7 @@ public final class TMan extends ComponentDefinition {
             if(self.getPeerAddress().getId() > numberOfPartitions || leader != null) return;
 
             cyclesCount++;
-
+            //trying to understand is gradient stable...
             if(oldView.size() == 0) {
                 oldView = view;
                 return;
@@ -267,18 +270,20 @@ public final class TMan extends ComponentDefinition {
         }
     };
 
+    //take sampleSize amount of message to do view exchange
     private ArrayList<PeerDescriptor> takeM(ArrayList<PeerDescriptor> buffer) {
-        if(buffer.size() <= sampleZise)
+        if(buffer.size() <= sampleSize)
             return buffer;
 
         ArrayList<PeerDescriptor> result = new ArrayList<PeerDescriptor>();
-        for(int i=0; i< sampleZise; i++)
+        for(int i=0; i< sampleSize; i++)
             result.add(buffer.get(i));
         return result;
     }
 
     private ArrayList<PeerDescriptor> selectView() {
         PeerDescriptor own = null;
+        //get rid of self when bufferSize = 3
         for(int i = 0; i < buffer.size(); i++) {
             if(buffer.size() < 3) break;
             if(buffer.get(i).getPeerAddress().getPeerAddress().equals(self.getPeerAddress())) {
@@ -290,16 +295,9 @@ public final class TMan extends ComponentDefinition {
         if(own != null)
             buffer.remove(own);
 
+        //return buffer if is't less than viewSize
         if(buffer.size() <= viewSize)
             return buffer;
-
-        //clear buffer from irrelevant peers
-        if(leader != null) {
-            for(int i=0; i < buffer.size(); i++){
-                if(buffer.get(i).getPeerAddress().equals(leader))
-                    buffer.remove(i);
-            }
-        }
 
         ArrayList<PeerDescriptor> view = new ArrayList<PeerDescriptor>();
         for(int i=0; i< viewSize; i++)
@@ -404,6 +402,7 @@ public final class TMan extends ComponentDefinition {
             return;
         }
 
+        //no ping - ask neighbours, if majority of then agree, start leader election
         isLeaderSuspected = true;
         logger.info(String.format("%s - leader suspected", self.getPeerAddress().getId()));
         requiredAcks = (int)Math.ceil(((double)(view.size()-1))/2);
@@ -460,9 +459,11 @@ public final class TMan extends ComponentDefinition {
     private void startLeaderElection(ArrayList<PeerAddress> additionalPeer) {
         //Snapshot.leaderElectionStart(view.size());
 
+        //know the leader
         if(leader != null && leader.equals(self)) {
             if(additionalPeer == null) return;
 
+            //if another peer started leader election send him Election message
             for(PeerAddress peer : additionalPeer)
                 trigger(new ElectionMessage(self, peer), networkPort);
             return;
@@ -540,7 +541,7 @@ public final class TMan extends ComponentDefinition {
         }
     };
 
-    //if no ok message from a node with higher utility after timeout, then I'sampleZise the leader
+    //if no ok message from a node with higher utility after timeout, then I'm the leader
     Handler<ElectionMessageTimeout> electionMessageTimeoutHandler = new Handler<ElectionMessageTimeout>() {
         @Override
         public void handle(ElectionMessageTimeout electionMessageTimeout) {
@@ -571,6 +572,7 @@ public final class TMan extends ComponentDefinition {
                 return;
             }
 
+            //I have a bigger utility => start leader election and send Election message to neighbours and a peers that started leader election before
             if(self.getPeerAddress().getId() < electionMessage.getPeerSource().getPeerAddress().getId()) {
                 arrayForGradientLeaders.add(electionMessage.getPeerSource());
                 startLeaderElection(arrayForGradientLeaders);
@@ -593,7 +595,7 @@ public final class TMan extends ComponentDefinition {
         }
     };
 
-    //start election again if failed
+    //start election again if failed to receive Election message after T
     Handler<ElectionMessageWaitingTimeout> electionMessageWaitingTimeoutHandler = new Handler<ElectionMessageWaitingTimeout>() {
         @Override
         public void handle(ElectionMessageWaitingTimeout electionMessageWaitingTimeout) {
@@ -662,6 +664,7 @@ public final class TMan extends ComponentDefinition {
         return sortedView.get(0);
     }
 
+    //handles ACKs, adds index entry to self if get's ACK
     Handler<AddEntryACK> handleAddEntryACK = new Handler<AddEntryACK>() {
         @Override
         public void handle(AddEntryACK event) {

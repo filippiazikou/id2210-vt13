@@ -119,14 +119,12 @@ public final class Search extends ComponentDefinition {
             rst.setTimeoutEvent(new UpdateIndexTimeout(rst));
             trigger(rst, timerPort);
 
-            // TODO super ugly workaround...
             IndexWriter writer;
             try {
                 writer = new IndexWriter(index, config);
                 writer.commit();
                 writer.close();
             } catch (IOException e) {
-            // TODO Auto-generated catch block
                 e.printStackTrace();
             }
 
@@ -154,7 +152,7 @@ public final class Search extends ComponentDefinition {
                 Range range = new Range(0,indexStore.get(0)-1);
                 missingValues.add(range);
             }
-            /*Get all the rest missing ranges till the max value*/
+            //Get all the rest missing ranges till the max value
             while (i<indexStore.size()-1) {
                 if(indexStore.get(i).equals(indexStore.get(i+1)-1)) {
                     i++;
@@ -202,9 +200,9 @@ public final class Search extends ComponentDefinition {
             try {
                 missingData = retrieveRecordFromIndexRange(ranges);
             } catch (ParseException e) {
-                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+                e.printStackTrace();
             } catch (IOException e) {
-                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+                e.printStackTrace();
             }
             if(missingData.size() == 0) return;
             trigger(new GetUpdatesResponse(self, getUpdatesRequest.getPeerSource(), missingData), networkPort);
@@ -233,16 +231,14 @@ public final class Search extends ComponentDefinition {
 //            }
 //            logger.info("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
-            garbageCollection();
+            runGarbageCollection();
         }
     };
-
 
     private ArrayList<BasicTorrentData> retrieveRecordFromIndexRange(ArrayList<Range> ranges) throws ParseException, IOException {
         // the "title" arg specifies the default field to use when no field is explicitly specified in the query.
         IndexSearcher searcher = null;
         IndexReader reader;
-
 
         Query q;
         int hitsPerPage = 10;
@@ -267,24 +263,24 @@ public final class Search extends ComponentDefinition {
             searcher.search(q, collector);
             hits = collector.topDocs().scoreDocs;
             j = 0;
-            while ( j < hits.length && j < 10 ) {
+            while ( j < hits.length && j < hitsPerPage ) {
                 docId = hits[j].doc;
                 d = searcher.doc(docId);
                 results.add(new BasicTorrentData(Integer.parseInt(d.get("id")), d.get("title"), d.get("magnet")));
                 j++;
             }
-            if (results.size() >= 10)
+            if (results.size() >= hitsPerPage)
                 break;
         }
 
         //Keep the first 10 items
-        for (int i=10 ; i<results.size() ; i++)
+        for (int i=hitsPerPage; i<results.size(); i++)
             results.remove(i);
 
         return results;
     }
 
-    private void garbageCollection() {
+    private void runGarbageCollection() {
         while (indexStore.contains(garbageIndex+1)) {
             indexStore.remove(garbageIndex+1);
             garbageIndex += 1;
@@ -346,6 +342,7 @@ public final class Search extends ComponentDefinition {
 
             ArrayList<String> results =  searchResults.get(event.getEvent().getId());
 
+            //write all results we've got into new Lucene index
             StandardAnalyzer analyzer = new StandardAnalyzer(Version.LUCENE_42);
             Directory index = new RAMDirectory();
             IndexWriterConfig config = new IndexWriterConfig(Version.LUCENE_42, analyzer);
@@ -369,6 +366,7 @@ public final class Search extends ComponentDefinition {
                 }
                 w.close();
 
+                //query again to get most relevant records first
                 Query q = new QueryParser(Version.LUCENE_42, "title", analyzer).parse(event.getQ());
                 IndexSearcher searcher = null;
                 IndexReader reader = null;
@@ -399,16 +397,15 @@ public final class Search extends ComponentDefinition {
                 // is no need to access the documents any more.
                 reader.close();
             } catch (IOException e) {
-                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+                e.printStackTrace();
             } catch (ParseException e) {
-                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+                e.printStackTrace();
             }
 
             searchResults.remove(event.getEvent().getId());
 
             sb.append("</body></html>");
 
-            //return sb.toString();
             response = new WebResponse(sb.toString(), event.getEvent(), 1, 1);
             trigger(response, webPort);
 
@@ -483,9 +480,6 @@ public final class Search extends ComponentDefinition {
     }
 
     private void addEntry(String title, int id, String magnet) throws IOException {
-
-        //logger.info(self.getPeerAddress().getId() + " - adding index entry: {}-{}-{}"+magnet, title, id);
-
         IndexWriter w = new IndexWriter(index, config);
         Document doc = new Document();
         doc.add(new TextField("title", title, Field.Store.YES));
@@ -612,7 +606,7 @@ public final class Search extends ComponentDefinition {
         @Override
         public void handle(GarbageRequestIdTimeout event) {
             if(requestIds.contains(event.getRequestId()))
-                requestIds.remove((Object) event.getRequestId());
+                requestIds.remove(event.getRequestId());
         }
     };
 
@@ -638,9 +632,8 @@ public final class Search extends ComponentDefinition {
                 trigger(new AddEntryACK(self, self , event.getInitiator(), event.getRequestID(), lastIdWritten), tmanSamplePort);
 
             } catch (IOException e) {
-                e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+                e.printStackTrace();
             }
-            //lastIdWritten += 1;
 
             //Start a timer to remove it after 1 min
             ScheduleTimeout rst = new ScheduleTimeout(60000);
@@ -698,7 +691,7 @@ public final class Search extends ComponentDefinition {
                     if(!indexStore.contains(event.getEntryId()))
                         addEntry(args[1], event.getEntryId(), args[2]);
                 } catch (IOException e) {
-                    e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
+                    e.printStackTrace();
                 }
 
                 sb.append("Entry: ").append(event.getEntryId()).append(" - ").append(args[1]).append(" - ").append(args[2]);
@@ -716,7 +709,7 @@ public final class Search extends ComponentDefinition {
         @Override
         public void handle(AddEntryACKTimeout event) {
             if (receivedAcks.size()>0 && receivedAcks.contains(event.getRequestId())) {
-                receivedAcks.remove((Object) event.getRequestId() );
+                receivedAcks.remove(event.getRequestId());
             }
             else  {
                 trigger(new AddEntryRequest(self, self, self, event.getTitle(), event.getMagnet(), event.getRequestId()), tmanSamplePort);
