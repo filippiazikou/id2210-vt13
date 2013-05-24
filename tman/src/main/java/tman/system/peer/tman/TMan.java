@@ -371,7 +371,7 @@ public final class TMan extends ComponentDefinition {
         trigger(new PingMessage(self, leader), networkPort);
         trigger(pingResponseTimeout, timerPort);
 
-        logger.info(String.format("%s ping to %s", self.getPeerAddress().getId(), leader.getPeerAddress().getId()));
+        //logger.info(String.format("%s ping to %s", self.getPeerAddress().getId(), leader.getPeerAddress().getId()));
         }
     };
 
@@ -660,6 +660,9 @@ public final class TMan extends ComponentDefinition {
 
     private PeerDescriptor getTheClosestToInitiator(PeerAddress initiator) {
         ArrayList<PeerDescriptor> sortedView = view;
+
+        if(sortedView.isEmpty()) return null;
+
         Collections.sort(sortedView, new RankComparator(initiator));
         return sortedView.get(0);
     }
@@ -670,8 +673,11 @@ public final class TMan extends ComponentDefinition {
         public void handle(AddEntryACK event) {
             if (event.getInitiator() == self)
                 trigger(new AddEntryACK(self, self, self, event.getRequestID(), event.getEntryId()), tmanPartnersPort);
-            else
-                trigger(new AddEntryACK(self, getTheClosestToInitiator(event.getInitiator()).getPeerAddress(), event.getInitiator(), event.getRequestID(), event.getEntryId()), networkPort);
+            else {
+                PeerDescriptor closest = getTheClosestToInitiator(event.getInitiator());
+                if(closest != null)
+                    trigger(new AddEntryACK(self, closest.getPeerAddress(), event.getInitiator(), event.getRequestID(), event.getEntryId()), networkPort);
+            }
 
             //if (leader!=null && leader.equals(self)) {
             //    Snapshot.initAck();
